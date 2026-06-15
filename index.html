@@ -1310,11 +1310,10 @@ function applyRemoteDays(remote) {
   renderMonth();
 }
 function applyRemoteLocs(arr) {
-  if (Array.isArray(arr) && arr.length) setLocs(arr);
+  setLocs(Array.isArray(arr) ? arr : []);   // null (e.g. after Reset) -> falls back to defaults
 }
 function applyRemoteColors(obj) {
-  if (obj && typeof obj === 'object') { setColors(obj); }
-  else { setColors({}); }
+  setColors(obj && typeof obj === 'object' ? obj : {});
   renderMonth();
   if (!document.getElementById('colorsModal').classList.contains('hidden')) renderColorRows();
 }
@@ -1339,6 +1338,11 @@ window.onRemoteDays = applyRemoteDays;
 window.onRemoteLocs = applyRemoteLocs;
 window.onRemoteColors = applyRemoteColors;
 window.onSyncStatus = setSyncStatus;
+// local-customization getters used by the one-time migration (push local up if cloud empty)
+window.localLocsOverride = function () {
+  try { const s = JSON.parse(localStorage.getItem(LOCS_KEY)); return (Array.isArray(s) && s.length) ? s : null; } catch (e) { return null; }
+};
+window.localColors = function () { return getColors(); };
 
 // ============================================================
 // INIT
@@ -1452,13 +1456,16 @@ try {
 
   onValue(ref(db, ".info/connected"), s => window.onSyncStatus && window.onSyncStatus(s.val() ? "online" : "offline"));
 
-  let initDone = false;
+  // One-time migration per node: on the first snapshot, if the cloud node is
+  // empty, push this device's local customizations up (so nothing is lost and
+  // other devices receive them). After that, the cloud is the source of truth.
+  let daysInit = false, locsInit = false, colorsInit = false;
+
   onValue(ref(db, `${NODE}/days`), snap => {
     let remote = snap.val();
-    if (!initDone) {
-      initDone = true;
+    if (!daysInit) {
+      daysInit = true;
       if (remote === null) {
-        // first run: migrate whatever this device already has up to the cloud
         const ov = (window.collectOverrides && window.collectOverrides()) || {};
         if (Object.keys(ov).length) { window.fb.setDays(ov); return; } // re-fires with data
         remote = {};
@@ -1467,8 +1474,29 @@ try {
     window.onRemoteDays && window.onRemoteDays(remote || {});
   });
 
-  onValue(ref(db, `${NODE}/locs`), snap => { window.onRemoteLocs && window.onRemoteLocs(snap.val()); });
-  onValue(ref(db, `${NODE}/colors`), snap => { window.onRemoteColors && window.onRemoteColors(snap.val()); });
+  onValue(ref(db, `${NODE}/locs`), snap => {
+    const v = snap.val();
+    if (!locsInit) {
+      locsInit = true;
+      if (v === null) {
+        const l = window.localLocsOverride && window.localLocsOverride();
+        if (l) { window.fb.setLocs(l); return; }
+      }
+    }
+    window.onRemoteLocs && window.onRemoteLocs(v);
+  });
+
+  onValue(ref(db, `${NODE}/colors`), snap => {
+    const v = snap.val();
+    if (!colorsInit) {
+      colorsInit = true;
+      if (v === null) {
+        const c = (window.localColors && window.localColors()) || {};
+        if (Object.keys(c).length) { window.fb.setColors(c); return; }
+      }
+    }
+    window.onRemoteColors && window.onRemoteColors(v);
+  });
 } catch (e) {
   console.error("Calendar sync init failed:", e);
   window.onSyncStatus && window.onSyncStatus("offline");
