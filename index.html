@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Travel Calendar</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+:root {
+  --bg: #f2f2f7; --card: #fff; --primary: #007aff; --danger: #ff3b30;
+  --success: #34c759; --text: #1c1c1e; --secondary: #8e8e93;
+  --border: #c6c6c8; --input-bg: #e5e5ea; --radius: 12px;
+  /* event category colors */
+  --c-work: #bcd5f2; --c-social: #d9c2e9; --c-appt: #fbe3a3;
+  --c-leaveok: #bfe3c0; --c-leavetodo: #f3b4b4; --c-none: #e5e5ea;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100dvh;
+  padding: 0 0 env(safe-area-inset-bottom);
+}
+.header {
+  background: var(--card); border-bottom: 0.5px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+.header-top {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px 8px;
+}
+.header-top h1 { font-size: 17px; font-weight: 600; }
+.month-nav { display: flex; align-items: center; gap: 14px; }
+.month-nav button {
+  background: none; border: none; color: var(--primary); font-size: 22px;
+  font-weight: 600; cursor: pointer; padding: 0 6px; line-height: 1;
+}
+.month-nav .month-label { font-size: 15px; font-weight: 700; min-width: 130px; text-align: center; }
+.header-tools {
+  display: flex; gap: 8px; padding: 0 16px 10px; justify-content: flex-end;
+}
+.header-tools button {
+  background: var(--input-bg); border: none; color: var(--primary);
+  font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px 12px; border-radius: 14px;
+}
+.header-tools button.primary { background: var(--primary); color: #fff; }
+
+.container { padding: 12px 12px 40px; max-width: 640px; margin: 0 auto; }
+
+/* Day rows */
+.day {
+  display: flex; gap: 10px; background: var(--card); border-radius: var(--radius);
+  padding: 10px 12px; margin-bottom: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  cursor: pointer; align-items: stretch;
+}
+.day:active { background: #fafafa; }
+.day.weekend { background: #f7f7fb; }
+.day.today { outline: 2px solid var(--primary); }
+.day-date {
+  flex-shrink: 0; width: 46px; text-align: center; display: flex;
+  flex-direction: column; justify-content: center; border-right: 0.5px solid var(--border); padding-right: 8px;
+}
+.day-date .dow { font-size: 11px; font-weight: 600; color: var(--secondary); text-transform: uppercase; }
+.day-date .dnum { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.day.today .day-date .dnum { color: var(--primary); }
+.day-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.day-topline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.loc-badge {
+  font-size: 14px; font-weight: 700; padding: 2px 10px; border-radius: 12px;
+  background: var(--input-bg); color: var(--text);
+}
+.flag {
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+}
+.flag.milano { background: #ffe0b2; color: #8a5300; }
+.flag.marta { background: #ffd6e7; color: #a81b5a; }
+.chips { display: flex; flex-direction: column; gap: 3px; }
+.chip {
+  font-size: 12.5px; padding: 3px 9px; border-radius: 8px; line-height: 1.3;
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+}
+.chip .ctxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip.travel { background: #d6ecff; color: #0a4a7a; font-weight: 600; }
+.chip.ev-work { background: var(--c-work); color: #14385e; }
+.chip.ev-social { background: var(--c-social); color: #4a2566; }
+.chip.ev-appt { background: var(--c-appt); color: #6b4e00; }
+.chip.ev-leave_ok { background: var(--c-leaveok); color: #1c5a23; }
+.chip.ev-leave_todo { background: var(--c-leavetodo); color: #7a1414; }
+.chip.ev- { background: var(--c-none); color: var(--text); }
+.day-empty { font-size: 12.5px; color: var(--secondary); font-style: italic; align-self: center; }
+
+/* Summary */
+.summary-card {
+  background: var(--card); border-radius: var(--radius); padding: 14px; margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.summary-card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--secondary); margin-bottom: 10px; }
+.tally-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.tally {
+  display: flex; align-items: baseline; gap: 6px; background: var(--input-bg);
+  padding: 5px 11px; border-radius: 14px; font-size: 13px;
+}
+.tally .t-name { font-weight: 600; }
+.tally .t-count { font-weight: 800; color: var(--primary); }
+.tally.flagcount.milano { background: #ffe0b2; }
+.tally.flagcount.marta { background: #ffd6e7; }
+
+/* Modal / bottom sheet */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 2000;
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.modal-overlay.hidden { display: none; }
+.modal {
+  background: var(--bg); width: 100%; max-width: 640px;
+  border-radius: 16px 16px 0 0; max-height: 92dvh; display: flex; flex-direction: column;
+  animation: slideUp 0.25s cubic-bezier(0.23, 1, 0.32, 1);
+}
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px; border-bottom: 0.5px solid var(--border); background: var(--card);
+  border-radius: 16px 16px 0 0;
+}
+.modal-header .m-title { font-size: 16px; font-weight: 700; }
+.modal-header button {
+  background: none; border: none; color: var(--primary);
+  font-size: 15px; font-weight: 600; cursor: pointer; padding: 4px; white-space: nowrap;
+}
+.modal-header .del-link { color: var(--danger); }
+.modal-body { overflow-y: auto; padding: 14px 16px 24px; }
+
+.fieldcard { background: var(--card); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+.field-label { font-size: 12px; font-weight: 600; color: var(--secondary); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+.text-in {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  font-size: 16px; background: var(--input-bg); outline: none; color: var(--text);
+}
+.text-in:focus { border-color: var(--primary); background: #fff; }
+.quick-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.quick-chip {
+  font-size: 13px; padding: 5px 11px; border-radius: 14px; border: 1px solid var(--border);
+  background: var(--input-bg); cursor: pointer; color: var(--text);
+}
+.quick-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+.toggle-row .tl-label { font-size: 15px; font-weight: 600; }
+.toggle-row .tl-sub { font-size: 12px; color: var(--secondary); }
+.switch { position: relative; width: 51px; height: 31px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute; inset: 0; background: var(--border); border-radius: 31px;
+  transition: .2s; cursor: pointer;
+}
+.slider:before {
+  content: ''; position: absolute; height: 27px; width: 27px; left: 2px; top: 2px;
+  background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.switch input:checked + .slider { background: var(--success); }
+.switch input:checked + .slider:before { transform: translateX(20px); }
+
+.leg, .evrow { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.leg select, .evrow select {
+  padding: 9px 8px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--input-bg); font-size: 14px; outline: none; color: var(--text);
+}
+.leg .from, .leg .to { flex: 1; min-width: 70px; }
+.leg .time { width: 78px; }
+.leg .mode { width: 96px; }
+.evrow .evtext { flex: 1; min-width: 120px; }
+.evrow .evcat { width: 130px; }
+.mini-note { font-size: 11.5px; color: var(--secondary); margin-top: 4px; }
+
+.btn { width: 100%; padding: 14px; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; }
+.btn:active { opacity: .7; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-secondary { background: var(--input-bg); color: var(--text); margin-top: 8px; }
+.btn-danger-ghost { background: none; color: var(--danger); margin-top: 6px; }
+
+.export-text {
+  width: 100%; min-height: 220px; resize: vertical; padding: 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--input-bg); font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px; color: var(--text); outline: none; white-space: pre; overflow: auto;
+}
+.toast {
+  position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+  background: #333; color: #fff; padding: 12px 22px; border-radius: 20px;
+  font-size: 14px; z-index: 3000; opacity: 0; transition: opacity .3s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.legend .lg { font-size: 11px; padding: 2px 8px; border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <h1>📅 Calendar</h1>
+    <div class="month-nav">
+      <button id="prevMonth">‹</button>
+      <span class="month-label" id="monthLabel">—</span>
+      <button id="nextMonth">›</button>
+    </div>
+  </div>
+  <div class="header-tools">
+    <button id="btnToday">Today</button>
+    <button id="btnTools">Backup / Sync</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="summary-card" id="summaryCard"></div>
+  <div id="calendar"></div>
+</div>
+
+<!-- DAY EDITOR -->
+<div class="modal-overlay hidden" id="dayModal">
+  <div class="modal">
+    <div class="modal-header">
+      <button class="del-link" id="dayClear">Clear</button>
+      <span class="m-title" id="dayTitle">Day</span>
+      <button id="daySave">Save</button>
+    </div>
+    <div class="modal-body" id="dayBody"></div>
+  </div>
+</div>
+
+<!-- TOOLS -->
+<div class="modal-overlay hidden" id="toolsModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="m-title">Backup / Sync</span>
+      <button id="toolsClose">Done</button>
+    </div>
+    <div class="modal-body">
+      <div class="fieldcard">
+        <div class="field-label">Your data (JSON)</div>
+        <textarea class="export-text" id="dataText" spellcheck="false"></textarea>
+        <button class="btn btn-secondary" id="btnCopy">Copy to clipboard</button>
+        <button class="btn btn-secondary" id="btnDownload">Download .json file</button>
+        <p class="mini-note">Edits are saved on this device. To move data to another device, copy this text and paste it into the box on the other device, then tap Import. To make it the published default for everyone, send this JSON to Kiro.</p>
+      </div>
+      <div class="fieldcard">
+        <div class="field-label">Import</div>
+        <button class="btn btn-primary" id="btnImport">Import the JSON above</button>
+        <button class="btn btn-danger-ghost" id="btnResetAll">Reset to published defaults</button>
+        <p class="mini-note">Import replaces your local edits with the JSON in the box. Reset discards local edits and restores the version baked into this page.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// Travel Calendar v1
+// Single-file app. Inspired by the expense-tracker (iOS style,
+// localStorage + export to bake defaults). No backend required.
+// ============================================================
+</script>
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const STORAGE_KEY = 'travelCalendarData';
+const VERSION = 1;
+
+// Known locations (quick-pick chips in the editor). Free text always allowed.
+const KNOWN_LOCS = ['Torino','Milano','Roma','Palermo','Olbia','Madrid','Eraclea','Marsala','Favignana'];
+
+// A stable colour per location badge (soft tints). Unknown locs get a hashed colour.
+const LOC_COLORS = {
+  'Torino':       ['#ffd5d0','#7a1d14'],
+  'Milano':       ['#d3e3ff','#143a7a'],
+  'Roma':         ['#ffe6c2','#7a4a05'],
+  'Palermo':      ['#d2f0d6','#1c5a23'],
+  'Olbia':        ['#cdeef2','#0a5560'],
+  'Madrid':       ['#ffd9b3','#8a3b00'],
+  'Eraclea':      ['#e0d7f5','#42276e'],
+  'Marsala':      ['#f7d9ec','#7a1a55'],
+  'Favignana':    ['#cfeaff','#0a4a7a']
+};
+
+// Event categories: key -> label. CSS class is .ev-<key>.
+const EVENT_CATS = [
+  { key: '',           label: '— none —' },
+  { key: 'work',       label: 'Work' },
+  { key: 'social',     label: 'Social / Personal' },
+  { key: 'appt',       label: 'Appointment' },
+  { key: 'leave_ok',   label: 'Leave — requested' },
+  { key: 'leave_todo', label: 'Leave — to request' }
+];
+
+// ============================================================
+// SEED (published defaults). Compact line format:
+//   date ; loc ; flags ; travel ; events
+//   flags  = comma list of {milano, marta}
+//   travel = legs joined by | , each  mode:FROM-TO@TIME  (mode f=flight, t=train)
+//   events = slots joined by | , each  cat:text          (cat key, then ':')
+// Transcribed from the current planning sheet (Jun–Aug 2026).
+// ============================================================
+const SEED = `
+2026-06-01;Torino;;;
+2026-06-02;Torino;;;
+2026-06-03;Torino;milano;;
+2026-06-04;Torino;marta;;
+2026-06-05;Torino;marta;;
+2026-06-06;Torino;marta;;
+2026-06-07;Torino;marta;;
+2026-06-08;Torino;;;
+2026-06-09;Torino;milano;;
+2026-06-10;Torino;milano;;
+2026-06-11;Roma;milano;t:Centrale-Termini@19:35;appt:Parrucchiere
+2026-06-12;Olbia;;f:FCO-OLB@16:00;leave_ok:Ferie (No)
+2026-06-13;Olbia;;;
+2026-06-14;Roma;;f:OLB-FCO@19:55;
+2026-06-15;Roma;;t:Termini-Susa@17:40;
+2026-06-16;Torino;;;
+2026-06-17;Torino;milano;t:Centrale-Termini@17:45;
+2026-06-18;Roma;;;
+2026-06-19;Roma;;;appt:Psy
+2026-06-20;Roma;;;
+2026-06-21;Roma;;;
+2026-06-22;Torino;;t:Termini-Susa@9:43;
+2026-06-23;Torino;;;
+2026-06-24;Torino;milano;;social:Decathlon|social:Ape Peppe
+2026-06-25;Roma;milano;t:Centrale-Termini@20:35;social:Vertortbre h16
+2026-06-26;Palermo;;f:FCO-PMO@18:00;
+2026-06-27;Palermo;;;social:Compleanno Marta
+2026-06-28;Palermo;;;
+2026-06-29;Torino;;f:PMO-TRN@6:05;
+2026-06-30;Torino;milano;;appt:Parrucchiere 18:30
+2026-07-01;Torino;milano;;
+2026-07-02;Torino;milano;;
+2026-07-03;Roma;;;
+2026-07-04;Roma;;;
+2026-07-05;Roma;;;
+2026-07-06;Madrid;;f:FCO-MAD@;work:Madrid Offsite 6-7
+2026-07-07;Madrid;;;work:Madrid Offsite 6-7
+2026-07-08;Torino;;f:MAD-TRN@;social:Concerto Ernia
+2026-07-09;Palermo;milano;f:TRN-PMO@20:30;social:Compleanno Cerry
+2026-07-10;Palermo;;;appt:Psy
+2026-07-11;Palermo;;;
+2026-07-12;Palermo;;;
+2026-07-13;Torino;;f:PMO-TRN@6:05;
+2026-07-14;Torino;milano;;
+2026-07-15;Torino;milano;;
+2026-07-16;Torino;;;
+2026-07-17;Torino;;f:TRN-PMO@10:10;social:Concerto Sarafine|leave_ok:Ferie (chieste)
+2026-07-18;Palermo;;;
+2026-07-19;Palermo;;;
+2026-07-20;Roma;;f:PMO-FCO@6:05;
+2026-07-21;Torino;;t:Termini-Centrale@8:20;
+2026-07-22;Torino;;;
+2026-07-23;Torino;;t:Centrale-Termini@;
+2026-07-24;Torino;;;
+2026-07-25;Torino;;;
+2026-07-26;Torino;;;
+2026-07-27;Torino;;t:Termini-Susa@;
+2026-07-28;Torino;;;
+2026-07-29;Torino;;;
+2026-07-30;Torino;;;
+2026-07-31;Torino;;;
+2026-08-01;Torino;;;
+2026-08-02;Torino;;;
+2026-08-03;Torino;;;
+2026-08-04;Torino;;;
+2026-08-05;Torino;;;
+2026-08-06;Torino;;;
+2026-08-07;Roma;;t:Centrale-Termini@;
+2026-08-08;Roma;;;
+2026-08-09;Roma;;;
+2026-08-10;Roma;;;
+2026-08-11;Roma;;;
+2026-08-12;Roma;;;
+2026-08-13;Roma;;;
+2026-08-14;Palermo;;f:FCO-PMO@12:50;leave_ok:Ferie (chieste)
+2026-08-15;Palermo;;;
+2026-08-16;Palermo;;;
+2026-08-17;Palermo;;;
+2026-08-18;Palermo;;;
+2026-08-19;Palermo;;;
+2026-08-20;Palermo;;;
+2026-08-21;Eraclea;;;
+2026-08-22;Eraclea;;;
+2026-08-23;Eraclea;;;
+2026-08-24;Eraclea;;;leave_todo:Ferie (da chiedere)
+2026-08-25;Eraclea;;;leave_todo:Ferie (da chiedere)
+2026-08-26;Marsala;;;social:Baglio Donnafranca|leave_todo:Ferie (da chiedere)
+2026-08-27;Favignana;;;social:Booking|leave_todo:Ferie (da chiedere)
+2026-08-28;Favignana;;;social:Booking|leave_todo:Ferie (da chiedere)
+2026-08-29;Palermo;;;
+2026-08-30;Roma;;f:PMO-FCO@16:55;
+2026-08-31;Roma;;;
+`;
+</script>
+<script>
+// ============================================================
+// DATA MODEL
+// A day object: { loc, milano:bool, marta:bool,
+//   travel:[{mode:'f'|'t', from, to, time}],
+//   events:[{cat, text}] }  (events kept to MAX_EVENTS slots)
+// ============================================================
+const MAX_EVENTS = 4;
+const MAX_LEGS = 2;
+
+function parseSeed(text) {
+  const out = {};
+  text.split('\n').forEach(line => {
+    line = line.trim();
+    if (!line) return;
+    const parts = line.split(';');
+    const date = parts[0].trim();
+    if (!date) return;
+    const loc = (parts[1] || '').trim();
+    const flags = (parts[2] || '').split(',').map(s => s.trim()).filter(Boolean);
+    const travelStr = (parts[3] || '').trim();
+    const eventsStr = (parts[4] || '').trim();
+
+    const travel = [];
+    if (travelStr) {
+      travelStr.split('|').forEach(seg => {
+        seg = seg.trim(); if (!seg) return;
+        const ci = seg.indexOf(':');
+        const mode = seg.slice(0, ci);
+        const rest = seg.slice(ci + 1);
+        const at = rest.lastIndexOf('@');
+        const route = at >= 0 ? rest.slice(0, at) : rest;
+        const time = at >= 0 ? rest.slice(at + 1) : '';
+        const dash = route.indexOf('-');
+        const from = dash >= 0 ? route.slice(0, dash) : route;
+        const to = dash >= 0 ? route.slice(dash + 1) : '';
+        travel.push({ mode: mode || 't', from: from.trim(), to: to.trim(), time: time.trim() });
+      });
+    }
+    const events = [];
+    if (eventsStr) {
+      eventsStr.split('|').forEach(seg => {
+        seg = seg.trim(); if (!seg) return;
+        const ci = seg.indexOf(':');
+        const cat = ci >= 0 ? seg.slice(0, ci) : '';
+        const txt = ci >= 0 ? seg.slice(ci + 1) : seg;
+        events.push({ cat: cat.trim(), text: txt.trim() });
+      });
+    }
+    out[date] = {
+      loc,
+      milano: flags.includes('milano'),
+      marta: flags.includes('marta'),
+      travel,
+      events
+    };
+  });
+  return out;
+}
+
+const DEFAULT_DATA = parseSeed(SEED);
+
+function loadData() {
+  // Start from published defaults, then overlay any local edits per-day.
+  const data = {};
+  Object.keys(DEFAULT_DATA).forEach(d => { data[d] = cloneDay(DEFAULT_DATA[d]); });
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (stored && stored.days) {
+      Object.keys(stored.days).forEach(d => { data[d] = normalizeDay(stored.days[d]); });
+    }
+  } catch (e) {}
+  return data;
+}
+
+function cloneDay(d) { return JSON.parse(JSON.stringify(d)); }
+function normalizeDay(d) {
+  d = d || {};
+  return {
+    loc: d.loc || '',
+    milano: !!d.milano,
+    marta: !!d.marta,
+    travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '' })) : [],
+    events: Array.isArray(d.events) ? d.events.map(e => ({ cat: e.cat || '', text: e.text || '' })) : []
+  };
+}
+
+function isEmptyDay(d) {
+  if (!d) return true;
+  if (d.loc) return false;
+  if (d.milano || d.marta) return false;
+  if (d.travel && d.travel.some(t => t.from || t.to || t.time)) return false;
+  if (d.events && d.events.some(e => e.text)) return false;
+  return true;
+}
+
+function saveData() {
+  // Persist only days that differ from the published default (keeps storage lean
+  // and lets future default updates flow through for untouched days).
+  const days = {};
+  Object.keys(DATA).forEach(d => {
+    const cur = DATA[d];
+    const def = DEFAULT_DATA[d];
+    const curStr = JSON.stringify(normalizeDay(cur));
+    const defStr = def ? JSON.stringify(normalizeDay(def)) : null;
+    if (isEmptyDay(cur)) {
+      // explicitly cleared: only record if default had something
+      if (def && !isEmptyDay(def)) days[d] = normalizeDay(cur);
+    } else if (curStr !== defStr) {
+      days[d] = normalizeDay(cur);
+    }
+  });
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: VERSION, days })); } catch (e) {}
+}
+
+let DATA = loadData();
+
+// ============================================================
+// DATE HELPERS
+// ============================================================
+const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function pad(n) { return String(n).padStart(2, '0'); }
+function ymd(y, m, d) { return `${y}-${pad(m + 1)}-${pad(d)}`; } // m is 0-based
+function todayKey() { const t = new Date(); return ymd(t.getFullYear(), t.getMonth(), t.getDate()); }
+function dowOf(key) { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d).getDay(); }
+
+// Current visible month — default to the month containing today, but if today is
+// outside the seeded range, jump to the first seeded month.
+let viewYear, viewMonth;
+(function initView() {
+  const t = new Date();
+  viewYear = t.getFullYear(); viewMonth = t.getMonth();
+  const keys = Object.keys(DATA).sort();
+  if (keys.length) {
+    const tk = todayKey();
+    if (tk < keys[0] || tk > keys[keys.length - 1]) {
+      const [y, m] = keys[0].split('-').map(Number);
+      viewYear = y; viewMonth = m - 1;
+    }
+  }
+})();
+
+// ============================================================
+// RENDER
+// ============================================================
+function locStyle(loc) {
+  if (LOC_COLORS[loc]) return `background:${LOC_COLORS[loc][0]};color:${LOC_COLORS[loc][1]};`;
+  if (!loc) return '';
+  // hash unknown loc to a hue
+  let h = 0; for (let i = 0; i < loc.length; i++) h = (h * 31 + loc.charCodeAt(i)) % 360;
+  return `background:hsl(${h},60%,88%);color:hsl(${h},70%,28%);`;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function travelChip(t) {
+  const icon = t.mode === 'f' ? '✈️' : '🚆';
+  const route = [t.from, t.to].filter(Boolean).join(' → ');
+  const time = t.time ? ' · ' + t.time : '';
+  return `<span class="chip travel"><span class="ctxt">${icon} ${esc(route)}${esc(time)}</span></span>`;
+}
+function eventChip(e) {
+  return `<span class="chip ev-${esc(e.cat)}"><span class="ctxt">${esc(e.text)}</span></span>`;
+}
+
+function renderMonth() {
+  document.getElementById('monthLabel').textContent = `${MONTHS[viewMonth]} ${viewYear}`;
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const tk = todayKey();
+  const cal = document.getElementById('calendar');
+  let html = '';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = ymd(viewYear, viewMonth, d);
+    const dy = DATA[key] || normalizeDay({});
+    const dow = dowOf(key);
+    const weekend = (dow === 0 || dow === 6);
+    const classes = ['day'];
+    if (weekend) classes.push('weekend');
+    if (key === tk) classes.push('today');
+
+    let top = '';
+    if (dy.loc) top += `<span class="loc-badge" style="${locStyle(dy.loc)}">${esc(dy.loc)}</span>`;
+    if (dy.milano) top += `<span class="flag milano">MILANO</span>`;
+    if (dy.marta) top += `<span class="flag marta">💗 MARTA</span>`;
+
+    let chips = '';
+    (dy.travel || []).forEach(t => { if (t.from || t.to || t.time) chips += travelChip(t); });
+    (dy.events || []).forEach(e => { if (e.text) chips += eventChip(e); });
+
+    let body;
+    if (!top && !chips) {
+      body = `<div class="day-empty">tap to add</div>`;
+    } else {
+      body = (top ? `<div class="day-topline">${top}</div>` : '') +
+             (chips ? `<div class="chips">${chips}</div>` : '');
+    }
+
+    html += `<div class="${classes.join(' ')}" data-key="${key}">
+      <div class="day-date"><span class="dow">${DOW[dow]}</span><span class="dnum">${d}</span></div>
+      <div class="day-body">${body}</div>
+    </div>`;
+  }
+  cal.innerHTML = html;
+  cal.querySelectorAll('.day').forEach(el => {
+    el.addEventListener('click', () => openDayEditor(el.dataset.key));
+  });
+  renderSummary(daysInMonth);
+}
+
+function renderSummary(daysInMonth) {
+  const counts = {}; let milanoDays = 0, martaDays = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = ymd(viewYear, viewMonth, d);
+    const dy = DATA[key]; if (!dy || !dy.loc) continue;
+    const name = dy.loc + (dy.marta ? ' (Marta)' : '');
+    counts[name] = (counts[name] || 0) + 1;
+    if (dy.milano) milanoDays++;
+    if (dy.marta) martaDays++;
+  }
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  let html = `<h2>${MONTHS[viewMonth]} — where I'll be</h2><div class="tally-grid">`;
+  if (!entries.length) {
+    html += `<span class="tally"><span class="t-name">No locations set yet</span></span>`;
+  } else {
+    entries.forEach(([name, c]) => {
+      html += `<span class="tally"><span class="t-name">${esc(name)}</span><span class="t-count">${c}</span></span>`;
+    });
+  }
+  html += `</div><div class="tally-grid" style="margin-top:8px;">
+    <span class="tally flagcount milano"><span class="t-name">Working Milano</span><span class="t-count">${milanoDays}</span></span>
+    <span class="tally flagcount marta"><span class="t-name">💗 Marta here</span><span class="t-count">${martaDays}</span></span>
+  </div>`;
+  document.getElementById('summaryCard').innerHTML = html;
+}
+</script>
+<script>
+// ============================================================
+// DAY EDITOR
+// ============================================================
+let editingKey = null;
+
+function catOptions(sel) {
+  return EVENT_CATS.map(c => `<option value="${c.key}" ${c.key === sel ? 'selected' : ''}>${c.label}</option>`).join('');
+}
+function modeOptions(sel) {
+  return `<option value="t" ${sel === 't' ? 'selected' : ''}>🚆 Train</option><option value="f" ${sel === 'f' ? 'selected' : ''}>✈️ Flight</option>`;
+}
+
+function openDayEditor(key) {
+  editingKey = key;
+  const dy = cloneDay(DATA[key] || normalizeDay({}));
+  const [y, m, d] = key.split('-').map(Number);
+  document.getElementById('dayTitle').textContent = `${DOW[dowOf(key)]} ${d} ${MONTHS[m - 1]} ${y}`;
+
+  // pad travel + events to fixed slot counts for editing
+  const legs = dy.travel.slice(0, MAX_LEGS);
+  while (legs.length < MAX_LEGS) legs.push({ mode: 't', from: '', to: '', time: '' });
+  const evs = dy.events.slice(0, MAX_EVENTS);
+  while (evs.length < MAX_EVENTS) evs.push({ cat: '', text: '' });
+
+  const locChips = KNOWN_LOCS.map(l =>
+    `<span class="quick-chip ${l === dy.loc ? 'active' : ''}" data-loc="${l}">${l}</span>`).join('');
+
+  let legsHtml = legs.map((t, i) => `
+    <div class="leg">
+      <select class="mode" data-leg="${i}" data-f="mode">${modeOptions(t.mode)}</select>
+      <input class="text-in from" data-leg="${i}" data-f="from" placeholder="From" value="${esc(t.from)}">
+      <input class="text-in to" data-leg="${i}" data-f="to" placeholder="To" value="${esc(t.to)}">
+      <input class="text-in time" data-leg="${i}" data-f="time" placeholder="hh:mm" value="${esc(t.time)}">
+    </div>`).join('');
+
+  let evsHtml = evs.map((e, i) => `
+    <div class="evrow">
+      <input class="text-in evtext" data-ev="${i}" data-f="text" placeholder="Event ${i + 1}" value="${esc(e.text)}">
+      <select class="evcat" data-ev="${i}" data-f="cat">${catOptions(e.cat)}</select>
+    </div>`).join('');
+
+  document.getElementById('dayBody').innerHTML = `
+    <div class="fieldcard">
+      <div class="field-label">Where will I be?</div>
+      <input class="text-in" id="edLoc" placeholder="Location" value="${esc(dy.loc)}">
+      <div class="quick-chips" id="locChips">${locChips}</div>
+    </div>
+    <div class="fieldcard">
+      <div class="toggle-row">
+        <div><div class="tl-label">Working in Milano</div><div class="tl-sub">Office / commute day</div></div>
+        <label class="switch"><input type="checkbox" id="edMilano" ${dy.milano ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" style="margin-top:6px;">
+        <div><div class="tl-label">💗 Marta here</div><div class="tl-sub">Marta is with me</div></div>
+        <label class="switch"><input type="checkbox" id="edMarta" ${dy.marta ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="fieldcard">
+      <div class="field-label">Flights / Trains</div>
+      ${legsHtml}
+      <p class="mini-note">Leave From/To empty if not travelling that day.</p>
+    </div>
+    <div class="fieldcard">
+      <div class="field-label">Events (up to ${MAX_EVENTS})</div>
+      ${evsHtml}
+      <div class="legend">
+        <span class="lg chip ev-work">Work</span>
+        <span class="lg chip ev-social">Social</span>
+        <span class="lg chip ev-appt">Appt</span>
+        <span class="lg chip ev-leave_ok">Leave ok</span>
+        <span class="lg chip ev-leave_todo">Leave todo</span>
+      </div>
+    </div>
+    <button class="btn btn-primary" id="daySaveBtn">Save day</button>
+  `;
+
+  // wire location quick chips
+  document.querySelectorAll('#locChips .quick-chip').forEach(ch => {
+    ch.addEventListener('click', () => {
+      const inp = document.getElementById('edLoc');
+      inp.value = ch.dataset.loc;
+      document.querySelectorAll('#locChips .quick-chip').forEach(x => x.classList.remove('active'));
+      ch.classList.add('active');
+    });
+  });
+  document.getElementById('edLoc').addEventListener('input', () => {
+    const v = document.getElementById('edLoc').value.trim();
+    document.querySelectorAll('#locChips .quick-chip').forEach(x => x.classList.toggle('active', x.dataset.loc === v));
+  });
+  document.getElementById('daySaveBtn').addEventListener('click', saveDayEditor);
+
+  document.getElementById('dayModal').classList.remove('hidden');
+}
+
+function collectDayFromEditor() {
+  const body = document.getElementById('dayBody');
+  const loc = document.getElementById('edLoc').value.trim();
+  const milano = document.getElementById('edMilano').checked;
+  const marta = document.getElementById('edMarta').checked;
+
+  const legs = [];
+  for (let i = 0; i < MAX_LEGS; i++) {
+    const get = f => { const el = body.querySelector(`[data-leg="${i}"][data-f="${f}"]`); return el ? el.value.trim() : ''; };
+    const from = get('from'), to = get('to'), time = get('time'), mode = get('mode') || 't';
+    if (from || to || time) legs.push({ mode, from, to, time });
+  }
+  const events = [];
+  for (let i = 0; i < MAX_EVENTS; i++) {
+    const text = body.querySelector(`[data-ev="${i}"][data-f="text"]`).value.trim();
+    const cat = body.querySelector(`[data-ev="${i}"][data-f="cat"]`).value;
+    if (text) events.push({ cat, text });
+  }
+  return { loc, milano, marta, travel: legs, events };
+}
+
+function saveDayEditor() {
+  DATA[editingKey] = collectDayFromEditor();
+  saveData();
+  closeDayModal();
+  renderMonth();
+  toast('Saved');
+}
+
+function clearDay() {
+  if (!editingKey) return;
+  DATA[editingKey] = normalizeDay({});
+  saveData();
+  closeDayModal();
+  renderMonth();
+  toast('Day cleared');
+}
+function closeDayModal() { document.getElementById('dayModal').classList.add('hidden'); editingKey = null; }
+
+// ============================================================
+// TOOLS (export / import / reset)
+// ============================================================
+function buildExportObject() {
+  // export the full merged dataset (non-empty days), pretty JSON
+  const days = {};
+  Object.keys(DATA).sort().forEach(d => { if (!isEmptyDay(DATA[d])) days[d] = normalizeDay(DATA[d]); });
+  return { version: VERSION, exportedAt: new Date().toISOString(), days };
+}
+function openTools() {
+  document.getElementById('dataText').value = JSON.stringify(buildExportObject(), null, 2);
+  document.getElementById('toolsModal').classList.remove('hidden');
+}
+function closeTools() { document.getElementById('toolsModal').classList.add('hidden'); }
+
+function importData() {
+  let obj;
+  try { obj = JSON.parse(document.getElementById('dataText').value); } catch (e) { toast('Invalid JSON'); return; }
+  if (!obj || !obj.days) { toast('No "days" found'); return; }
+  // rebuild from defaults, then overlay imported days
+  DATA = {};
+  Object.keys(DEFAULT_DATA).forEach(d => { DATA[d] = cloneDay(DEFAULT_DATA[d]); });
+  Object.keys(obj.days).forEach(d => { DATA[d] = normalizeDay(obj.days[d]); });
+  saveData();
+  renderMonth();
+  closeTools();
+  toast('Imported');
+}
+function resetAll() {
+  if (!confirm('Discard all local edits and restore the published defaults?')) return;
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  DATA = loadData();
+  renderMonth();
+  closeTools();
+  toast('Reset to defaults');
+}
+function downloadJson() {
+  const blob = new Blob([JSON.stringify(buildExportObject(), null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `travel-calendar-${todayKey()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function copyData() {
+  const ta = document.getElementById('dataText');
+  ta.select();
+  navigator.clipboard?.writeText(ta.value).then(() => toast('Copied'), () => { try { document.execCommand('copy'); toast('Copied'); } catch (e) { toast('Copy failed'); } });
+}
+
+// ============================================================
+// MISC
+// ============================================================
+let toastTimer = null;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+
+function gotoToday() {
+  const t = new Date();
+  viewYear = t.getFullYear(); viewMonth = t.getMonth();
+  renderMonth();
+}
+function shiftMonth(delta) {
+  viewMonth += delta;
+  if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+  if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+  renderMonth();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+document.getElementById('prevMonth').addEventListener('click', () => shiftMonth(-1));
+document.getElementById('nextMonth').addEventListener('click', () => shiftMonth(1));
+document.getElementById('btnToday').addEventListener('click', gotoToday);
+document.getElementById('btnTools').addEventListener('click', openTools);
+document.getElementById('toolsClose').addEventListener('click', closeTools);
+document.getElementById('dayClear').addEventListener('click', clearDay);
+document.getElementById('daySave').addEventListener('click', saveDayEditor);
+document.getElementById('btnCopy').addEventListener('click', copyData);
+document.getElementById('btnDownload').addEventListener('click', downloadJson);
+document.getElementById('btnImport').addEventListener('click', importData);
+document.getElementById('btnResetAll').addEventListener('click', resetAll);
+
+// close bottom sheets when tapping the dim backdrop
+document.getElementById('dayModal').addEventListener('click', e => { if (e.target.id === 'dayModal') closeDayModal(); });
+document.getElementById('toolsModal').addEventListener('click', e => { if (e.target.id === 'toolsModal') closeTools(); });
+
+renderMonth();
+</script>
+</body>
+</html>
