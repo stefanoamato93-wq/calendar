@@ -30,6 +30,10 @@ body {
   padding: 12px 16px 8px;
 }
 .header-top h1 { font-size: 17px; font-weight: 600; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--border); margin-left: 2px; vertical-align: middle; }
+.dot.online { background: var(--success); }
+.dot.offline { background: var(--secondary); }
+.dot.syncing { background: #ffcc00; }
 .month-nav { display: flex; align-items: center; gap: 14px; }
 .month-nav button {
   background: none; border: none; color: var(--primary); font-size: 22px;
@@ -259,7 +263,7 @@ body {
 
 <div class="header">
   <div class="header-top">
-    <h1>📅 Calendar</h1>
+    <h1>📅 Calendar <span class="dot" id="statusDot" title="Sync status"></span></h1>
     <div class="month-nav">
       <button id="prevMonth">‹</button>
       <span class="month-label" id="monthLabel">—</span>
@@ -306,13 +310,13 @@ body {
         <textarea class="export-text" id="dataText" spellcheck="false"></textarea>
         <button class="btn btn-secondary" id="btnCopy">Copy to clipboard</button>
         <button class="btn btn-secondary" id="btnDownload">Download .json file</button>
-        <p class="mini-note">Edits are saved on this device. To move data to another device, copy this text and paste it into the box on the other device, then tap Import. To make it the published default for everyone, send this JSON to Kiro.</p>
+        <p class="mini-note">Your plan now syncs automatically to the cloud (the dot by the title shows the connection: green = online, grey = offline). Open this page on any device to see the same data. This JSON box is just a manual backup: copy or download it to keep a snapshot.</p>
       </div>
       <div class="fieldcard">
         <div class="field-label">Import</div>
         <button class="btn btn-primary" id="btnImport">Import the JSON above</button>
         <button class="btn btn-danger-ghost" id="btnResetAll">Reset to published defaults</button>
-        <p class="mini-note">Import replaces your local edits with the JSON in the box. Reset discards local edits and restores the version baked into this page.</p>
+        <p class="mini-note">Import replaces the current plan with the JSON in the box and pushes it to the cloud (all devices update). Reset wipes the synced edits and restores the version baked into this page, on every device.</p>
       </div>
     </div>
   </div>
@@ -1009,7 +1013,7 @@ function openDayEditor(key) {
   // select a city / delete a city (event-delegated, chips re-render after delete)
   locChipsEl.addEventListener('click', e => {
     const del = e.target.closest('.chip-del');
-    if (del) { e.stopPropagation(); removeLoc(del.dataset.del); refreshChips(); return; }
+    if (del) { e.stopPropagation(); removeLoc(del.dataset.del); refreshChips(); cloudSyncLocs(); return; }
     const chip = e.target.closest('.quick-chip');
     if (chip) { edLoc.value = chip.dataset.loc; refreshChips(); }
   });
@@ -1019,7 +1023,7 @@ function openDayEditor(key) {
   document.getElementById('addCity').addEventListener('click', () => {
     const inp = document.getElementById('newCity');
     const v = inp.value.trim();
-    if (addLoc(v)) { edLoc.value = v; inp.value = ''; refreshChips(); }
+    if (addLoc(v)) { edLoc.value = v; inp.value = ''; refreshChips(); cloudSyncLocs(); }
     else { toast(v ? 'City already exists' : 'Enter a city'); }
   });
   document.getElementById('newCity').addEventListener('keydown', e => {
@@ -1064,6 +1068,7 @@ function collectDayFromEditor() {
 function saveDayEditor() {
   DATA[editingKey] = collectDayFromEditor();
   saveData();
+  cloudSyncDay(editingKey);
   closeDayModal();
   renderMonth();
   toast('Saved');
@@ -1071,8 +1076,10 @@ function saveDayEditor() {
 
 function clearDay() {
   if (!editingKey) return;
-  DATA[editingKey] = normalizeDay({});
+  const key = editingKey;
+  DATA[key] = normalizeDay({});
   saveData();
+  cloudSyncDay(key);
   closeDayModal();
   renderMonth();
   toast('Day cleared');
@@ -1103,13 +1110,16 @@ function importData() {
   Object.keys(DEFAULT_DATA).forEach(d => { DATA[d] = cloneDay(DEFAULT_DATA[d]); });
   Object.keys(obj.days).forEach(d => { DATA[d] = normalizeDay(obj.days[d]); });
   saveData();
+  // push the imported plan to the cloud (overrides become the shared truth)
+  if (window.fb && window.fb.ready) window.fb.setDays(collectOverrides());
   renderMonth();
   closeTools();
   toast('Imported');
 }
 function resetAll() {
-  if (!confirm('Discard all local edits and restore the published defaults?')) return;
+  if (!confirm('Discard all edits and restore the published defaults? This clears the synced data on every device.')) return;
   try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  if (window.fb && window.fb.ready) window.fb.removeAll();
   DATA = loadData();
   renderMonth();
   closeTools();
@@ -1159,6 +1169,59 @@ function shiftMonth(delta) {
 }
 
 // ============================================================
+// CLOUD SYNC GLUE
+// The Firebase transport lives in the <script type="module"> at the end and
+// exposes window.fb. These classic-scope helpers hold the app logic and are
+// called by the module via the window.on* hooks below.
+// ============================================================
+// All days that differ from the baked SEED default (incl. days cleared to empty),
+// keyed by date. This is what we store in the cloud (lean; SEED stays the baseline).
+function collectOverrides() {
+  const out = {};
+  Object.keys(DATA).forEach(d => {
+    const cur = DATA[d], def = DEFAULT_DATA[d];
+    const curN = normalizeDay(cur);
+    if (isEmptyDay(cur)) {
+      if (def && !isEmptyDay(def)) out[d] = curN;     // cleared a seeded day
+    } else if (!def || JSON.stringify(curN) !== JSON.stringify(normalizeDay(def))) {
+      out[d] = curN;
+    }
+  });
+  return out;
+}
+// Apply the shared truth from the cloud: SEED defaults + remote overrides.
+function applyRemoteDays(remote) {
+  remote = remote || {};
+  DATA = {};
+  Object.keys(DEFAULT_DATA).forEach(d => { DATA[d] = cloneDay(DEFAULT_DATA[d]); });
+  Object.keys(remote).forEach(d => { DATA[d] = normalizeDay(remote[d]); });
+  saveData();          // mirror to localStorage for instant load / offline
+  renderMonth();
+}
+function applyRemoteLocs(arr) {
+  if (Array.isArray(arr) && arr.length) setLocs(arr);
+}
+// Write one day to the cloud: store it if it overrides the default, else remove it.
+function cloudSyncDay(key) {
+  if (!window.fb || !window.fb.ready) return;
+  const cur = DATA[key], def = DEFAULT_DATA[key];
+  const curN = normalizeDay(cur);
+  const isOverride = isEmptyDay(cur)
+    ? (def && !isEmptyDay(def))
+    : (!def || JSON.stringify(curN) !== JSON.stringify(normalizeDay(def)));
+  if (isOverride) window.fb.setDay(key, curN);
+  else window.fb.removeDay(key);
+}
+function cloudSyncLocs() { if (window.fb && window.fb.ready) window.fb.setLocs(getLocs()); }
+function setSyncStatus(s) { const el = document.getElementById('statusDot'); if (el) el.className = 'dot ' + s; }
+
+// hooks the Firebase module calls
+window.collectOverrides = collectOverrides;
+window.onRemoteDays = applyRemoteDays;
+window.onRemoteLocs = applyRemoteLocs;
+window.onSyncStatus = setSyncStatus;
+
+// ============================================================
 // INIT
 // ============================================================
 document.getElementById('prevMonth').addEventListener('click', () => shiftMonth(-1));
@@ -1201,6 +1264,69 @@ document.getElementById('dayBody').addEventListener('click', e => {
 // reflect persisted view mode in the toggle, then render
 document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('active', b.dataset.view === viewMode));
 renderMonth();
+</script>
+
+<!-- ============================================================
+     CLOUD SYNC (Firebase Realtime Database)
+     Thin transport only: classic scripts above hold the app logic and call
+     window.fb.* to write; this module pushes remote changes back via the
+     window.on* hooks. Reuses the existing RTDB project under a separate
+     "travelCalendar" node so it never touches the grocery data.
+     Note: like the grocery app, the DB has no per-user auth; the data is
+     reachable by anyone who knows the URL. Fine for personal planning data.
+     ============================================================ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, onValue, set, update, remove }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBAlnSafWq49z3D6o8fFUr5saSVsj5GDD8",
+  authDomain: "groceries-d6616.firebaseapp.com",
+  databaseURL: "https://groceries-d6616-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "groceries-d6616",
+  storageBucket: "groceries-d6616.firebasestorage.app",
+  messagingSenderId: "594673376000",
+  appId: "1:594673376000:web:e554686a4fe4f860b9b1e5",
+  measurementId: "G-R8MMWYWPP9"
+};
+const NODE = "travelCalendar";
+
+try {
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  window.fb = {
+    ready: true,
+    setDay:    (k, v) => set(ref(db, `${NODE}/days/${k}`), v).catch(console.error),
+    removeDay: (k)    => remove(ref(db, `${NODE}/days/${k}`)).catch(console.error),
+    setDays:   (o)    => set(ref(db, `${NODE}/days`), o || {}).catch(console.error),
+    setLocs:   (a)    => set(ref(db, `${NODE}/locs`), a || []).catch(console.error),
+    removeAll: ()     => remove(ref(db, NODE)).catch(console.error)
+  };
+
+  onValue(ref(db, ".info/connected"), s => window.onSyncStatus && window.onSyncStatus(s.val() ? "online" : "offline"));
+
+  let initDone = false;
+  onValue(ref(db, `${NODE}/days`), snap => {
+    let remote = snap.val();
+    if (!initDone) {
+      initDone = true;
+      if (remote === null) {
+        // first run: migrate whatever this device already has up to the cloud
+        const ov = (window.collectOverrides && window.collectOverrides()) || {};
+        if (Object.keys(ov).length) { window.fb.setDays(ov); return; } // re-fires with data
+        remote = {};
+      }
+    }
+    window.onRemoteDays && window.onRemoteDays(remote || {});
+  });
+
+  onValue(ref(db, `${NODE}/locs`), snap => { window.onRemoteLocs && window.onRemoteLocs(snap.val()); });
+} catch (e) {
+  console.error("Calendar sync init failed:", e);
+  window.onSyncStatus && window.onSyncStatus("offline");
+}
 </script>
 </body>
 </html>
