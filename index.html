@@ -81,6 +81,8 @@ body {
 }
 .chip .ctxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip.travel { background: #d6ecff; color: #0a4a7a; font-weight: 600; }
+.chip.travel.booked { background: var(--c-leaveok); color: #1c5a23; }
+.chip.travel.unbooked { background: var(--c-leavetodo); color: #7a1414; }
 .chip.ev-work { background: var(--c-work); color: #14385e; }
 .chip.ev-social { background: var(--c-social); color: #4a2566; }
 .chip.ev-appt { background: var(--c-appt); color: #6b4e00; }
@@ -191,6 +193,66 @@ body {
 .toast.show { opacity: 1; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .legend .lg { font-size: 11px; padding: 2px 8px; border-radius: 8px; }
+
+/* dynamic add / remove rows */
+.row-del {
+  background: var(--input-bg); border: none; color: var(--danger);
+  font-size: 18px; font-weight: 700; width: 34px; height: 38px; border-radius: 9px;
+  cursor: pointer; flex-shrink: 0; line-height: 1;
+}
+.row-del:active { opacity: .6; }
+.book-btn {
+  border: none; border-radius: 9px; font-size: 12px; font-weight: 700;
+  padding: 0 10px; height: 38px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
+}
+.book-btn.booked { background: var(--c-leaveok); color: #1c5a23; }
+.book-btn.unbooked { background: var(--c-leavetodo); color: #7a1414; }
+.add-btn {
+  background: var(--input-bg); border: 1px dashed var(--border); color: var(--primary);
+  font-size: 14px; font-weight: 600; padding: 10px 12px; border-radius: 10px;
+  cursor: pointer; width: 100%; margin-top: 4px;
+}
+.add-btn:active { opacity: .7; }
+.quick-chip { position: relative; display: inline-flex; align-items: center; gap: 5px; }
+.chip-del {
+  background: none; border: none; color: var(--secondary); font-size: 15px; font-weight: 700;
+  cursor: pointer; padding: 0 0 0 1px; line-height: 1;
+}
+.quick-chip.active .chip-del { color: rgba(255,255,255,0.8); }
+.add-city-row { display: flex; gap: 6px; margin-top: 8px; }
+.add-city-row input { flex: 1; }
+.add-city-row button { width: auto; padding: 9px 16px; white-space: nowrap; margin-top: 0; }
+
+/* view toggle (segmented control) */
+.seg { display: inline-flex; background: var(--input-bg); border-radius: 14px; padding: 2px; margin-right: auto; }
+.seg button {
+  background: none; border: none; color: var(--secondary); font-size: 13px; font-weight: 600;
+  padding: 5px 13px; border-radius: 12px; cursor: pointer;
+}
+.seg button.active { background: #fff; color: var(--primary); box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+
+/* month grid view (weeks stacked, Mon-first) */
+#calendar.cal-grid { }
+.grid-dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 3px; }
+.grid-dow span { text-align: center; font-size: 10px; font-weight: 700; color: var(--secondary); text-transform: uppercase; }
+.grid-weeks { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.gcell {
+  min-height: 62px; background: var(--card); border-radius: 7px; padding: 3px 4px;
+  cursor: pointer; display: flex; flex-direction: column; gap: 1px; overflow: hidden;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+}
+.gcell.out { background: transparent; box-shadow: none; pointer-events: none; }
+.gcell.wknd { background: #ececf2; }
+.gcell:active { filter: brightness(0.96); }
+.gnum { font-size: 11px; font-weight: 700; line-height: 1.15; align-self: flex-start; min-width: 17px; text-align: center; }
+.gcell.today .gnum { background: var(--primary); color: #fff; border-radius: 50%; width: 18px; height: 18px; line-height: 18px; }
+.gloc { font-size: 9.5px; font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gflags { font-size: 8px; font-weight: 800; letter-spacing: .3px; opacity: .85; line-height: 1; }
+.gdots { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: auto; }
+.gdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.gtrav { font-size: 9px; line-height: 1; padding: 1px 2px; border-radius: 4px; }
+.gtrav.bk { background: var(--c-leaveok); }
+.gtrav.nb { background: var(--c-leavetodo); }
 </style>
 </head>
 <body>
@@ -205,6 +267,10 @@ body {
     </div>
   </div>
   <div class="header-tools">
+    <div class="seg" id="viewSeg">
+      <button data-view="list" class="active">List</button>
+      <button data-view="grid">Grid</button>
+    </div>
     <button id="btnToday">Today</button>
     <button id="btnTools">Backup / Sync</button>
   </div>
@@ -266,7 +332,10 @@ body {
 // CONFIG
 // ============================================================
 const STORAGE_KEY = 'travelCalendarData';
-const VERSION = 1;
+const VERSION = 2;
+// Current calendar view: 'list' (agenda) or 'grid' (month grid). Persisted per device.
+let viewMode = 'list';
+try { const v = localStorage.getItem('travelCalendarView'); if (v === 'grid' || v === 'list') viewMode = v; } catch (e) {}
 
 // Known locations (quick-pick chips in the editor). Free text always allowed.
 const KNOWN_LOCS = ['Torino','Milano','Roma','Palermo','Olbia','Madrid','Eraclea','Marsala','Favignana'];
@@ -300,7 +369,7 @@ const EVENT_CATS = [
 //   flags  = comma list of {milano, marta}
 //   travel = legs joined by | , each  mode:FROM-TO@TIME  (mode f=flight, t=train)
 //   events = slots joined by | , each  cat:text          (cat key, then ':')
-// Transcribed from the current planning sheet (Jun–Aug 2026).
+// Transcribed from the current planning sheet (Jun–Dec 2026).
 // ============================================================
 const SEED = `
 2026-06-01;Torino;;;
@@ -395,17 +464,140 @@ const SEED = `
 2026-08-29;Palermo;;;
 2026-08-30;Roma;;f:PMO-FCO@16:55;
 2026-08-31;Roma;;;
+2026-09-01;Torino;milano;t:Termini-Centrale@;
+2026-09-02;Torino;;;
+2026-09-03;Roma;milano;t:Centrale-Termini@;
+2026-09-04;Varsavia;;f:FCO-WAW@10:45;leave_todo:Festa (via aladdino)
+2026-09-05;Varsavia;;;
+2026-09-06;Varsavia;;f:WAW-FCO@15:35;
+2026-09-07;Torino;;;
+2026-09-08;Torino;milano;t:Termini-Centrale@;
+2026-09-09;Torino;;;
+2026-09-10;Roma;milano;t:Centrale-Termini@;social:Compleanno Dado
+2026-09-11;Roma;;;
+2026-09-12;Roma;;;social:Concerto Jovanotti
+2026-09-13;Roma;;;
+2026-09-14;Roma;;;
+2026-09-15;Torino;milano;t:Termini-Centrale@;
+2026-09-16;Torino;;;
+2026-09-17;Torino;;;
+2026-09-18;Torino;marta;;
+2026-09-19;Torino;marta;;
+2026-09-20;Torino;marta;;
+2026-09-21;Torino;;;
+2026-09-22;Torino;;;
+2026-09-23;Torino;;;
+2026-09-24;Torino;;;
+2026-09-25;Torino;marta;;social:Anniversario
+2026-09-26;Torino;marta;;
+2026-09-27;Torino;marta;;
+2026-09-28;Torino;;;
+2026-09-29;Torino;;;
+2026-09-30;Torino;;;
+2026-10-01;Roma;milano;t:Centrale-Termini@;
+2026-10-02;Palermo;;f:FCO-PMO@14:20;leave_todo:Festa (e/o cinema)
+2026-10-03;Palermo;;;
+2026-10-04;Palermo;;f:PMO-FCO@19:05;
+2026-10-05;Roma;;;
+2026-10-06;Torino;milano;t:Termini-Centrale@;
+2026-10-07;Torino;;;
+2026-10-08;Torino;;;
+2026-10-09;Torino;marta;;
+2026-10-10;Torino;marta;;
+2026-10-11;Torino;;;
+2026-10-12;Torino;;;
+2026-10-13;Torino;;;
+2026-10-14;Roma;;;
+2026-10-15;Roma;;;
+2026-10-16;Roma;;;
+2026-10-17;Roma;milano;t:Centrale-Termini@;
+2026-10-18;Torino;marta;;
+2026-10-19;Torino;;;
+2026-10-20;Torino;milano;t:Termini-Centrale@;
+2026-10-21;Roma;;;social:Compleanno Andrea/Caro
+2026-10-22;Torino;marta;;
+2026-10-23;Torino;marta;;
+2026-10-24;Torino;marta;;
+2026-10-25;Torino;marta;;
+2026-10-26;Torino;marta;;
+2026-10-27;Torino;;;
+2026-10-28;Roma;;;
+2026-10-29;Roma;;;
+2026-10-30;Roma;milano;t:Centrale-Termini@;
+2026-10-31;Roma;;;
+2026-11-01;Roma;;;
+2026-11-02;Roma;;;
+2026-11-03;Torino;milano;t:Termini-Centrale@;
+2026-11-04;Torino;;;
+2026-11-05;Torino;;;
+2026-11-06;Torino;;;
+2026-11-07;Torino;marta;;
+2026-11-08;Torino;marta;;
+2026-11-09;Torino;;;
+2026-11-10;Torino;;;
+2026-11-11;Torino;;;
+2026-11-12;Roma;milano;t:Centrale-Termini@;
+2026-11-13;Roma;;;
+2026-11-14;Roma;;;
+2026-11-15;Roma;;;
+2026-11-16;Roma;;;
+2026-11-17;Torino;milano;t:Termini-Centrale@;
+2026-11-18;Torino;marta;;
+2026-11-19;Torino;;;
+2026-11-20;Torino;marta;;
+2026-11-21;Torino;marta;;
+2026-11-22;Torino;marta;;
+2026-11-23;Torino;;;
+2026-11-24;Torino;;;
+2026-11-25;Roma;milano;t:Centrale-Termini@;
+2026-11-26;Roma;;;
+2026-11-27;Roma;;;
+2026-11-28;Roma;;;
+2026-11-29;Torino;marta;;
+2026-11-30;Roma;;;
+2026-12-01;Torino;milano;t:Termini-Centrale@;
+2026-12-02;Torino;;;
+2026-12-03;Torino;;;
+2026-12-04;Torino;marta;;
+2026-12-05;Torino;marta;;
+2026-12-06;Torino;marta;;
+2026-12-07;Torino;;;
+2026-12-08;Torino;;;
+2026-12-09;Torino;;;
+2026-12-10;Roma;milano;t:Centrale-Termini@;
+2026-12-11;Roma;;;
+2026-12-12;Roma;;;
+2026-12-13;Roma;;;
+2026-12-14;Roma;;;
+2026-12-15;Torino;milano;t:Termini-Centrale@;
+2026-12-16;Torino;;;
+2026-12-17;Torino;marta;;
+2026-12-18;Torino;marta;;social:Compleanno Albi
+2026-12-19;Torino;marta;;
+2026-12-20;Torino;marta;;
+2026-12-21;Torino;;;
+2026-12-22;Torino;;;
+2026-12-23;Torino;;;
+2026-12-24;Torino;;;
+2026-12-25;Torino;;;
+2026-12-26;Torino;;;
+2026-12-27;Torino;;;
+2026-12-28;Roma;milano;t:Termini-Centrale@;social:Compleanno Pino
+2026-12-29;Argentina;;f:FCO-EZE@18:15;leave_ok:Ferie
+2026-12-30;Argentina;;;leave_ok:Ferie
+2026-12-31;Argentina;;;leave_ok:Ferie
 `;
 </script>
 <script>
 // ============================================================
 // DATA MODEL
 // A day object: { loc, milano:bool, marta:bool,
-//   travel:[{mode:'f'|'t', from, to, time}],
-//   events:[{cat, text}] }  (events kept to MAX_EVENTS slots)
+//   travel:[{mode:'f'|'t', from, to, time, booked:bool}],
+//   events:[{cat, text}] }  (events and travel are unlimited)
 // ============================================================
-const MAX_EVENTS = 4;
-const MAX_LEGS = 2;
+// Events and travel legs are now unlimited (added/removed dynamically in the editor).
+// In the SEED, a booked (already bought) leg is marked with a "!" on the mode,
+// e.g. "f!:FCO-OLB@16:00" = booked flight; "f:FCO-OLB@16:00" = still to buy.
 
 function parseSeed(text) {
   const out = {};
@@ -425,7 +617,9 @@ function parseSeed(text) {
       travelStr.split('|').forEach(seg => {
         seg = seg.trim(); if (!seg) return;
         const ci = seg.indexOf(':');
-        const mode = seg.slice(0, ci);
+        let mode = seg.slice(0, ci);
+        const booked = mode.endsWith('!');
+        if (booked) mode = mode.slice(0, -1);
         const rest = seg.slice(ci + 1);
         const at = rest.lastIndexOf('@');
         const route = at >= 0 ? rest.slice(0, at) : rest;
@@ -433,7 +627,7 @@ function parseSeed(text) {
         const dash = route.indexOf('-');
         const from = dash >= 0 ? route.slice(0, dash) : route;
         const to = dash >= 0 ? route.slice(dash + 1) : '';
-        travel.push({ mode: mode || 't', from: from.trim(), to: to.trim(), time: time.trim() });
+        travel.push({ mode: mode || 't', from: from.trim(), to: to.trim(), time: time.trim(), booked });
       });
     }
     const events = [];
@@ -479,7 +673,7 @@ function normalizeDay(d) {
     loc: d.loc || '',
     milano: !!d.milano,
     marta: !!d.marta,
-    travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '' })) : [],
+    travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '', booked: !!t.booked })) : [],
     events: Array.isArray(d.events) ? d.events.map(e => ({ cat: e.cat || '', text: e.text || '' })) : []
   };
 }
@@ -550,12 +744,28 @@ function locStyle(loc) {
   let h = 0; for (let i = 0; i < loc.length; i++) h = (h * 31 + loc.charCodeAt(i)) % 360;
   return `background:hsl(${h},60%,88%);color:hsl(${h},70%,28%);`;
 }
+function locBgColor(loc) {
+  if (!loc) return '';
+  if (LOC_COLORS[loc]) return LOC_COLORS[loc][0];
+  let h = 0; for (let i = 0; i < loc.length; i++) h = (h * 31 + loc.charCodeAt(i)) % 360;
+  return `hsl(${h},60%,88%)`;
+}
+function locFgColor(loc) {
+  if (!loc) return 'var(--text)';
+  if (LOC_COLORS[loc]) return LOC_COLORS[loc][1];
+  let h = 0; for (let i = 0; i < loc.length; i++) h = (h * 31 + loc.charCodeAt(i)) % 360;
+  return `hsl(${h},70%,28%)`;
+}
+// solid dot colours for the compact grid view (one per event category)
+const CAT_DOT = { '': '#9aa0a6', work: '#4a86c7', social: '#9b59c6', appt: '#d9a300', leave_ok: '#34a853', leave_todo: '#e05656' };
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function travelChip(t) {
   const icon = t.mode === 'f' ? '✈️' : '🚆';
   const route = [t.from, t.to].filter(Boolean).join(' → ');
   const time = t.time ? ' · ' + t.time : '';
-  return `<span class="chip travel"><span class="ctxt">${icon} ${esc(route)}${esc(time)}</span></span>`;
+  const cls = t.booked ? 'booked' : 'unbooked';
+  const mark = t.booked ? ' ✓' : ' ✗';
+  return `<span class="chip travel ${cls}"><span class="ctxt">${icon} ${esc(route)}${esc(time)}${mark}</span></span>`;
 }
 function eventChip(e) {
   return `<span class="chip ev-${esc(e.cat)}"><span class="ctxt">${esc(e.text)}</span></span>`;
@@ -565,7 +775,14 @@ function renderMonth() {
   document.getElementById('monthLabel').textContent = `${MONTHS[viewMonth]} ${viewYear}`;
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const tk = todayKey();
+  if (viewMode === 'grid') renderGrid(daysInMonth, tk);
+  else renderList(daysInMonth, tk);
+  renderSummary(daysInMonth);
+}
+
+function renderList(daysInMonth, tk) {
   const cal = document.getElementById('calendar');
+  cal.className = '';
   let html = '';
   for (let d = 1; d <= daysInMonth; d++) {
     const key = ymd(viewYear, viewMonth, d);
@@ -579,7 +796,7 @@ function renderMonth() {
     let top = '';
     if (dy.loc) top += `<span class="loc-badge" style="${locStyle(dy.loc)}">${esc(dy.loc)}</span>`;
     if (dy.milano) top += `<span class="flag milano">MILANO</span>`;
-    if (dy.marta) top += `<span class="flag marta">💗 MARTA</span>`;
+    if (dy.marta) top += `<span class="flag marta">MARTA</span>`;
 
     let chips = '';
     (dy.travel || []).forEach(t => { if (t.from || t.to || t.time) chips += travelChip(t); });
@@ -602,7 +819,53 @@ function renderMonth() {
   cal.querySelectorAll('.day').forEach(el => {
     el.addEventListener('click', () => openDayEditor(el.dataset.key));
   });
-  renderSummary(daysInMonth);
+}
+
+function renderGrid(daysInMonth, tk) {
+  const cal = document.getElementById('calendar');
+  cal.className = 'cal-grid';
+  const dowLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let html = '<div class="grid-dow">' + dowLabels.map(d => `<span>${d}</span>`).join('') + '</div>';
+  html += '<div class="grid-weeks">';
+  // leading blanks (Monday-first; JS getDay has Sunday=0)
+  const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+  const lead = (firstDow + 6) % 7;
+  for (let i = 0; i < lead; i++) html += '<div class="gcell out"></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = ymd(viewYear, viewMonth, d);
+    const dy = DATA[key] || normalizeDay({});
+    const dow = dowOf(key);
+    const weekend = (dow === 0 || dow === 6);
+    const classes = ['gcell'];
+    if (key === tk) classes.push('today');
+    if (weekend && !dy.loc) classes.push('wknd');
+
+    let dots = '';
+    (dy.travel || []).forEach(t => { if (t.from || t.to) dots += `<span class="gtrav ${t.booked ? 'bk' : 'nb'}">${t.mode === 'f' ? '✈️' : '🚆'}</span>`; });
+    (dy.events || []).forEach(e => { if (e.text) dots += `<span class="gdot" style="background:${CAT_DOT[e.cat] || CAT_DOT['']}"></span>`; });
+
+    let flags = '';
+    if (dy.milano) flags += 'MI';
+    if (dy.marta) flags += (flags ? ' ' : '') + 'MA';
+
+    const style = dy.loc ? `background:${locBgColor(dy.loc)};color:${locFgColor(dy.loc)};` : '';
+    html += `<div class="${classes.join(' ')}" data-key="${key}" style="${style}">
+      <span class="gnum">${d}</span>
+      ${dy.loc ? `<span class="gloc">${esc(dy.loc)}</span>` : ''}
+      ${flags ? `<span class="gflags">${flags}</span>` : ''}
+      ${dots ? `<span class="gdots">${dots}</span>` : ''}
+    </div>`;
+  }
+  // trailing blanks to complete the final week row
+  const trail = (7 - ((lead + daysInMonth) % 7)) % 7;
+  for (let i = 0; i < trail; i++) html += '<div class="gcell out"></div>';
+  html += '</div>';
+
+  cal.innerHTML = html;
+  cal.querySelectorAll('.gcell[data-key]').forEach(el => {
+    el.addEventListener('click', () => openDayEditor(el.dataset.key));
+  });
 }
 
 function renderSummary(daysInMonth) {
@@ -621,12 +884,14 @@ function renderSummary(daysInMonth) {
     html += `<span class="tally"><span class="t-name">No locations set yet</span></span>`;
   } else {
     entries.forEach(([name, c]) => {
-      html += `<span class="tally"><span class="t-name">${esc(name)}</span><span class="t-count">${c}</span></span>`;
+      const base = name.replace(/ \(Marta\)$/, '');
+      const bg = locBgColor(base), fg = locFgColor(base);
+      html += `<span class="tally" style="background:${bg};color:${fg};"><span class="t-name">${esc(name)}</span><span class="t-count" style="color:inherit;">${c}</span></span>`;
     });
   }
   html += `</div><div class="tally-grid" style="margin-top:8px;">
     <span class="tally flagcount milano"><span class="t-name">Working Milano</span><span class="t-count">${milanoDays}</span></span>
-    <span class="tally flagcount marta"><span class="t-name">💗 Marta here</span><span class="t-count">${martaDays}</span></span>
+    <span class="tally flagcount marta"><span class="t-name">Marta here</span><span class="t-count">${martaDays}</span></span>
   </div>`;
   document.getElementById('summaryCard').innerHTML = html;
 }
@@ -637,11 +902,53 @@ function renderSummary(daysInMonth) {
 // ============================================================
 let editingKey = null;
 
+// ---- Editable city list (quick-pick chips). Stored locally; falls back to KNOWN_LOCS.
+const LOCS_KEY = 'travelCalendarLocs';
+function getLocs() {
+  try { const s = JSON.parse(localStorage.getItem(LOCS_KEY)); if (Array.isArray(s) && s.length) return s; } catch (e) {}
+  return KNOWN_LOCS.slice();
+}
+function setLocs(arr) { try { localStorage.setItem(LOCS_KEY, JSON.stringify(arr)); } catch (e) {} }
+function addLoc(name) {
+  name = (name || '').trim(); if (!name) return false;
+  const l = getLocs();
+  if (l.some(x => x.toLowerCase() === name.toLowerCase())) return false;
+  l.push(name); setLocs(l); return true;
+}
+function removeLoc(name) { setLocs(getLocs().filter(x => x !== name)); }
+
 function catOptions(sel) {
   return EVENT_CATS.map(c => `<option value="${c.key}" ${c.key === sel ? 'selected' : ''}>${c.label}</option>`).join('');
 }
 function modeOptions(sel) {
   return `<option value="t" ${sel === 't' ? 'selected' : ''}>🚆 Train</option><option value="f" ${sel === 'f' ? 'selected' : ''}>✈️ Flight</option>`;
+}
+
+// Row builders for the dynamic flight/train and event lists.
+function legRowHtml(t) {
+  t = t || { mode: 't', from: '', to: '', time: '', booked: false };
+  const booked = !!t.booked;
+  return `<div class="leg">
+      <select class="mode" data-f="mode">${modeOptions(t.mode)}</select>
+      <input class="text-in from" data-f="from" placeholder="From" value="${esc(t.from)}">
+      <input class="text-in to" data-f="to" placeholder="To" value="${esc(t.to)}">
+      <input class="text-in time" data-f="time" placeholder="hh:mm" value="${esc(t.time)}">
+      <button type="button" class="book-btn ${booked ? 'booked' : 'unbooked'}" data-f="booked" data-booked="${booked ? '1' : '0'}">${booked ? '✓ Booked' : '✗ To buy'}</button>
+      <button type="button" class="row-del" title="Remove">&times;</button>
+    </div>`;
+}
+function evRowHtml(e) {
+  e = e || { cat: '', text: '' };
+  return `<div class="evrow">
+      <input class="text-in evtext" data-f="text" placeholder="Event" value="${esc(e.text)}">
+      <select class="evcat" data-f="cat">${catOptions(e.cat)}</select>
+      <button type="button" class="row-del" title="Remove">&times;</button>
+    </div>`;
+}
+function locChipsHtml(selected) {
+  return getLocs().map(l =>
+    `<span class="quick-chip ${l === selected ? 'active' : ''}" data-loc="${esc(l)}">${esc(l)}<button type="button" class="chip-del" data-del="${esc(l)}" title="Delete city">&times;</button></span>`
+  ).join('');
 }
 
 function openDayEditor(key) {
@@ -650,53 +957,20 @@ function openDayEditor(key) {
   const [y, m, d] = key.split('-').map(Number);
   document.getElementById('dayTitle').textContent = `${DOW[dowOf(key)]} ${d} ${MONTHS[m - 1]} ${y}`;
 
-  // pad travel + events to fixed slot counts for editing
-  const legs = dy.travel.slice(0, MAX_LEGS);
-  while (legs.length < MAX_LEGS) legs.push({ mode: 't', from: '', to: '', time: '' });
-  const evs = dy.events.slice(0, MAX_EVENTS);
-  while (evs.length < MAX_EVENTS) evs.push({ cat: '', text: '' });
+  const legsHtml = dy.travel.map(legRowHtml).join('');
+  const evsHtml = dy.events.map(evRowHtml).join('');
 
-  const locChips = KNOWN_LOCS.map(l =>
-    `<span class="quick-chip ${l === dy.loc ? 'active' : ''}" data-loc="${l}">${l}</span>`).join('');
-
-  let legsHtml = legs.map((t, i) => `
-    <div class="leg">
-      <select class="mode" data-leg="${i}" data-f="mode">${modeOptions(t.mode)}</select>
-      <input class="text-in from" data-leg="${i}" data-f="from" placeholder="From" value="${esc(t.from)}">
-      <input class="text-in to" data-leg="${i}" data-f="to" placeholder="To" value="${esc(t.to)}">
-      <input class="text-in time" data-leg="${i}" data-f="time" placeholder="hh:mm" value="${esc(t.time)}">
-    </div>`).join('');
-
-  let evsHtml = evs.map((e, i) => `
-    <div class="evrow">
-      <input class="text-in evtext" data-ev="${i}" data-f="text" placeholder="Event ${i + 1}" value="${esc(e.text)}">
-      <select class="evcat" data-ev="${i}" data-f="cat">${catOptions(e.cat)}</select>
-    </div>`).join('');
-
+  // Order: travel, events, flags, then "Where will I be?" at the bottom.
   document.getElementById('dayBody').innerHTML = `
     <div class="fieldcard">
-      <div class="field-label">Where will I be?</div>
-      <input class="text-in" id="edLoc" placeholder="Location" value="${esc(dy.loc)}">
-      <div class="quick-chips" id="locChips">${locChips}</div>
-    </div>
-    <div class="fieldcard">
-      <div class="toggle-row">
-        <div><div class="tl-label">Working in Milano</div><div class="tl-sub">Office / commute day</div></div>
-        <label class="switch"><input type="checkbox" id="edMilano" ${dy.milano ? 'checked' : ''}><span class="slider"></span></label>
-      </div>
-      <div class="toggle-row" style="margin-top:6px;">
-        <div><div class="tl-label">💗 Marta here</div><div class="tl-sub">Marta is with me</div></div>
-        <label class="switch"><input type="checkbox" id="edMarta" ${dy.marta ? 'checked' : ''}><span class="slider"></span></label>
-      </div>
-    </div>
-    <div class="fieldcard">
       <div class="field-label">Flights / Trains</div>
-      ${legsHtml}
-      <p class="mini-note">Leave From/To empty if not travelling that day.</p>
+      <div id="legsList">${legsHtml}</div>
+      <button type="button" class="add-btn" id="addLeg">+ Add flight / train</button>
     </div>
     <div class="fieldcard">
-      <div class="field-label">Events (up to ${MAX_EVENTS})</div>
-      ${evsHtml}
+      <div class="field-label">Events</div>
+      <div id="evsList">${evsHtml}</div>
+      <button type="button" class="add-btn" id="addEv">+ Add event</button>
       <div class="legend">
         <span class="lg chip ev-work">Work</span>
         <span class="lg chip ev-social">Social</span>
@@ -705,24 +979,62 @@ function openDayEditor(key) {
         <span class="lg chip ev-leave_todo">Leave todo</span>
       </div>
     </div>
+    <div class="fieldcard">
+      <div class="toggle-row">
+        <div><div class="tl-label">Working in Milano</div><div class="tl-sub">Office / commute day</div></div>
+        <label class="switch"><input type="checkbox" id="edMilano" ${dy.milano ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" style="margin-top:6px;">
+        <div><div class="tl-label">Marta here</div><div class="tl-sub">Marta is with me</div></div>
+        <label class="switch"><input type="checkbox" id="edMarta" ${dy.marta ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="fieldcard">
+      <div class="field-label">Where will I be?</div>
+      <input class="text-in" id="edLoc" placeholder="Location" value="${esc(dy.loc)}">
+      <div class="quick-chips" id="locChips">${locChipsHtml(dy.loc)}</div>
+      <div class="add-city-row">
+        <input class="text-in" id="newCity" placeholder="Add a city">
+        <button type="button" class="btn btn-secondary" id="addCity">Add</button>
+      </div>
+      <p class="mini-note">Tap a city to select it. Tap × on a chip to delete it.</p>
+    </div>
     <button class="btn btn-primary" id="daySaveBtn">Save day</button>
   `;
 
-  // wire location quick chips
-  document.querySelectorAll('#locChips .quick-chip').forEach(ch => {
-    ch.addEventListener('click', () => {
-      const inp = document.getElementById('edLoc');
-      inp.value = ch.dataset.loc;
-      document.querySelectorAll('#locChips .quick-chip').forEach(x => x.classList.remove('active'));
-      ch.classList.add('active');
-    });
-  });
-  document.getElementById('edLoc').addEventListener('input', () => {
-    const v = document.getElementById('edLoc').value.trim();
-    document.querySelectorAll('#locChips .quick-chip').forEach(x => x.classList.toggle('active', x.dataset.loc === v));
-  });
-  document.getElementById('daySaveBtn').addEventListener('click', saveDayEditor);
+  const locChipsEl = document.getElementById('locChips');
+  const edLoc = document.getElementById('edLoc');
+  function refreshChips() { locChipsEl.innerHTML = locChipsHtml(edLoc.value.trim()); }
 
+  // select a city / delete a city (event-delegated, chips re-render after delete)
+  locChipsEl.addEventListener('click', e => {
+    const del = e.target.closest('.chip-del');
+    if (del) { e.stopPropagation(); removeLoc(del.dataset.del); refreshChips(); return; }
+    const chip = e.target.closest('.quick-chip');
+    if (chip) { edLoc.value = chip.dataset.loc; refreshChips(); }
+  });
+  edLoc.addEventListener('input', refreshChips);
+
+  // add a new city
+  document.getElementById('addCity').addEventListener('click', () => {
+    const inp = document.getElementById('newCity');
+    const v = inp.value.trim();
+    if (addLoc(v)) { edLoc.value = v; inp.value = ''; refreshChips(); }
+    else { toast(v ? 'City already exists' : 'Enter a city'); }
+  });
+  document.getElementById('newCity').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('addCity').click(); }
+  });
+
+  // add flight/train and event rows
+  document.getElementById('addLeg').addEventListener('click', () => {
+    document.getElementById('legsList').insertAdjacentHTML('beforeend', legRowHtml());
+  });
+  document.getElementById('addEv').addEventListener('click', () => {
+    document.getElementById('evsList').insertAdjacentHTML('beforeend', evRowHtml());
+  });
+
+  document.getElementById('daySaveBtn').addEventListener('click', saveDayEditor);
   document.getElementById('dayModal').classList.remove('hidden');
 }
 
@@ -733,17 +1045,19 @@ function collectDayFromEditor() {
   const marta = document.getElementById('edMarta').checked;
 
   const legs = [];
-  for (let i = 0; i < MAX_LEGS; i++) {
-    const get = f => { const el = body.querySelector(`[data-leg="${i}"][data-f="${f}"]`); return el ? el.value.trim() : ''; };
+  body.querySelectorAll('.leg').forEach(row => {
+    const get = f => { const el = row.querySelector(`[data-f="${f}"]`); return el ? el.value.trim() : ''; };
     const from = get('from'), to = get('to'), time = get('time'), mode = get('mode') || 't';
-    if (from || to || time) legs.push({ mode, from, to, time });
-  }
+    const bookEl = row.querySelector('.book-btn');
+    const booked = bookEl ? bookEl.dataset.booked === '1' : false;
+    if (from || to || time) legs.push({ mode, from, to, time, booked });
+  });
   const events = [];
-  for (let i = 0; i < MAX_EVENTS; i++) {
-    const text = body.querySelector(`[data-ev="${i}"][data-f="text"]`).value.trim();
-    const cat = body.querySelector(`[data-ev="${i}"][data-f="cat"]`).value;
+  body.querySelectorAll('.evrow').forEach(row => {
+    const text = row.querySelector('[data-f="text"]').value.trim();
+    const cat = row.querySelector('[data-f="cat"]').value;
     if (text) events.push({ cat, text });
-  }
+  });
   return { loc, milano, marta, travel: legs, events };
 }
 
@@ -831,6 +1145,12 @@ function gotoToday() {
   viewYear = t.getFullYear(); viewMonth = t.getMonth();
   renderMonth();
 }
+function setViewMode(mode) {
+  viewMode = (mode === 'grid') ? 'grid' : 'list';
+  try { localStorage.setItem('travelCalendarView', viewMode); } catch (e) {}
+  document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('active', b.dataset.view === viewMode));
+  renderMonth();
+}
 function shiftMonth(delta) {
   viewMonth += delta;
   if (viewMonth < 0) { viewMonth = 11; viewYear--; }
@@ -845,6 +1165,10 @@ document.getElementById('prevMonth').addEventListener('click', () => shiftMonth(
 document.getElementById('nextMonth').addEventListener('click', () => shiftMonth(1));
 document.getElementById('btnToday').addEventListener('click', gotoToday);
 document.getElementById('btnTools').addEventListener('click', openTools);
+document.getElementById('viewSeg').addEventListener('click', e => {
+  const b = e.target.closest('button[data-view]');
+  if (b) setViewMode(b.dataset.view);
+});
 document.getElementById('toolsClose').addEventListener('click', closeTools);
 document.getElementById('dayClear').addEventListener('click', clearDay);
 document.getElementById('daySave').addEventListener('click', saveDayEditor);
@@ -857,6 +1181,25 @@ document.getElementById('btnResetAll').addEventListener('click', resetAll);
 document.getElementById('dayModal').addEventListener('click', e => { if (e.target.id === 'dayModal') closeDayModal(); });
 document.getElementById('toolsModal').addEventListener('click', e => { if (e.target.id === 'toolsModal') closeTools(); });
 
+// row controls (delegated once on the persistent body)
+document.getElementById('dayBody').addEventListener('click', e => {
+  const book = e.target.closest('.book-btn');
+  if (book) {
+    const on = book.dataset.booked === '1';
+    book.dataset.booked = on ? '0' : '1';
+    book.classList.toggle('booked', !on);
+    book.classList.toggle('unbooked', on);
+    book.textContent = on ? '✗ To buy' : '✓ Booked';
+    return;
+  }
+  const del = e.target.closest('.row-del');
+  if (!del) return;
+  const row = del.closest('.leg, .evrow');
+  if (row) row.remove();
+});
+
+// reflect persisted view mode in the toggle, then render
+document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('active', b.dataset.view === viewMode));
 renderMonth();
 </script>
 </body>
