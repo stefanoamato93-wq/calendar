@@ -248,7 +248,10 @@ body {
   background: var(--input-bg); color: var(--primary);
 }
 .move-btn:active { opacity: .6; }
-.move-date { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.move-date {
+  width: 150px; padding: 9px 8px; border: 1px solid var(--primary); border-radius: 10px;
+  background: #fff; font-size: 14px; color: var(--text); outline: none;
+}
 /* bulk edit range row */
 .bulk-range { display: flex; align-items: center; gap: 8px; }
 .bulk-range .text-in { flex: 1; }
@@ -1160,7 +1163,7 @@ function legRowHtml(t) {
       <input class="text-in time" data-f="time" placeholder="hh:mm" value="${esc(t.time)}">
       <button type="button" class="book-btn ${booked ? 'booked' : 'unbooked'}" data-f="booked" data-booked="${booked ? '1' : '0'}">${booked ? '✓ Booked' : '✗ To buy'}</button>
       <button type="button" class="move-btn" title="Move to another day">📅</button>
-      <input type="date" class="move-date" aria-label="Move to date">
+      <input type="date" class="move-date" style="display:none" aria-label="Move to date">
       <button type="button" class="row-del" title="Remove">&times;</button>
     </div>`;
 }
@@ -1607,9 +1610,14 @@ document.getElementById('dayBody').addEventListener('click', e => {
   const move = e.target.closest('.move-btn');
   if (move) {
     const di = move.closest('.leg').querySelector('.move-date');
-    di.value = editingKey || '';
-    if (di.showPicker) { try { di.showPicker(); } catch (_) { di.focus(); } }
-    else { di.focus(); di.click(); }
+    if (di.style.display === 'none') {
+      di.style.display = '';
+      if (!di.value) di.value = editingKey || '';
+      di.focus();
+      if (di.showPicker) { try { di.showPicker(); } catch (_) {} }
+    } else {
+      di.style.display = 'none';
+    }
     return;
   }
   const del = e.target.closest('.row-del');
