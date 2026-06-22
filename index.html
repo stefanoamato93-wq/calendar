@@ -208,6 +208,7 @@ body {
 }
 .leg .from, .leg .to { flex: 1; min-width: 70px; }
 .leg .time { width: 78px; }
+.leg .co { flex: 1; min-width: 100px; }
 .leg .mode { width: 96px; }
 .evrow .evtext { flex: 1; min-width: 120px; }
 .evrow .evcat { width: 130px; }
@@ -342,6 +343,44 @@ body {
 .summary-card.compact { padding: 9px 12px; margin: 16px 0 0; opacity: .9; }
 .summary-card.compact h2 { font-size: 11px; margin-bottom: 7px; }
 .summary-card.compact .tally { font-size: 12px; padding: 3px 9px; }
+
+/* Trenitalia carnet flag on a day (List view) */
+.carnet-flag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: #e7defb; color: #4a2576; white-space: nowrap; }
+
+/* compact always-visible carnet status card (above the summary) */
+.carnet-card {
+  display: flex; align-items: center; gap: 12px; background: var(--card);
+  border-radius: var(--radius); padding: 11px 13px; margin-top: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04); cursor: pointer;
+}
+.carnet-card:active { background: #fafafa; }
+.carnet-card .cc-icon { font-size: 22px; flex-shrink: 0; }
+.carnet-card .cc-main { flex: 1; min-width: 0; }
+.carnet-card .cc-line { font-size: 13.5px; }
+.carnet-card .cc-sub { font-size: 11px; color: var(--secondary); margin-top: 3px; }
+.cc-left { font-weight: 800; padding: 1px 7px; border-radius: 9px; font-size: 12px; margin-left: 2px; }
+.cc-left.ok { background: #d6f0db; color: #1c5a23; }
+.cc-left.warn { background: #ffe8c2; color: #8a5300; }
+.cc-left.bad { background: #ffd6d2; color: #8a1810; }
+
+/* carnet progress bar */
+.carnet-bar { height: 7px; background: var(--input-bg); border-radius: 5px; overflow: hidden; margin: 6px 0 0; }
+.carnet-bar-fill { height: 100%; background: var(--primary); border-radius: 5px; transition: width .25s; }
+.carnet-bar-fill.over { background: var(--danger); }
+
+/* carnet manager modal */
+.carnet-current .cc-big { font-size: 17px; font-weight: 700; margin: 2px 0 8px; }
+.carnet-current .cc-used { font-size: 24px; color: var(--primary); }
+.carnet-form { display: flex; gap: 8px; }
+.carnet-form .carnet-size { width: 92px; flex-shrink: 0; }
+.carnet-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--border); }
+.carnet-row:last-child { border-bottom: none; }
+.carnet-row.current { }
+.carnet-row-main { flex: 1; min-width: 0; }
+.carnet-row-top { font-size: 15px; }
+.carnet-row-sub { font-size: 12px; color: var(--secondary); margin-top: 2px; }
+.carnet-tag { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; background: var(--primary); color: #fff; padding: 1px 7px; border-radius: 9px; margin-left: 4px; vertical-align: middle; }
+.carnet-del { width: 30px; height: 34px; font-size: 17px; }
 </style>
 </head>
 <body>
@@ -362,12 +401,14 @@ body {
     </div>
     <button id="btnToday">Today</button>
     <button id="btnBulk" title="Bulk edit a date range">📋 Bulk</button>
+    <button id="btnCarnet" title="Trenitalia carnet">🎫</button>
     <button id="btnColors" title="Edit colours">🎨</button>
   </div>
 </div>
 
 <div class="container">
   <div id="calendar"></div>
+  <div class="carnet-card" id="carnetCard"></div>
   <div class="summary-card compact" id="summaryCard"></div>
 </div>
 
@@ -456,11 +497,22 @@ body {
   </div>
 </div>
 
+<!-- CARNET MANAGER -->
+<div class="modal-overlay hidden" id="carnetModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="m-title">🎫 Trenitalia carnet</span>
+      <button id="carnetClose">Done</button>
+    </div>
+    <div class="modal-body" id="carnetBody"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 // ============================================================
-// Travel Calendar v1
+// Travel Calendar
 // Single-file app. Inspired by the expense-tracker (iOS style,
 // localStorage + export to bake defaults). No backend required.
 // ============================================================
@@ -470,7 +522,7 @@ body {
 // CONFIG
 // ============================================================
 const STORAGE_KEY = 'travelCalendarData';
-const VERSION = 3;
+const VERSION = 4;
 // Current calendar view: 'list' (agenda) or 'grid' (month grid). Persisted per device.
 let viewMode = 'list';
 try { const v = localStorage.getItem('travelCalendarView'); if (v === 'grid' || v === 'list') viewMode = v; } catch (e) {}
@@ -777,14 +829,18 @@ function parseSeed(text) {
         let mode = seg.slice(0, ci);
         const booked = mode.endsWith('!');
         if (booked) mode = mode.slice(0, -1);
-        const rest = seg.slice(ci + 1);
+        let rest = seg.slice(ci + 1);
+        // optional company after a '#', e.g. "f:FCO-OLB@16:00#Ryanair"
+        let co = '';
+        const hash = rest.indexOf('#');
+        if (hash >= 0) { co = rest.slice(hash + 1); rest = rest.slice(0, hash); }
         const at = rest.lastIndexOf('@');
         const route = at >= 0 ? rest.slice(0, at) : rest;
         const time = at >= 0 ? rest.slice(at + 1) : '';
         const dash = route.indexOf('-');
         const from = dash >= 0 ? route.slice(0, dash) : route;
         const to = dash >= 0 ? route.slice(dash + 1) : '';
-        travel.push({ mode: mode || 't', from: from.trim(), to: to.trim(), time: time.trim(), booked });
+        travel.push({ mode: mode || 't', from: from.trim(), to: to.trim(), time: time.trim(), co: co.trim(), booked });
       });
     }
     const events = [];
@@ -801,6 +857,8 @@ function parseSeed(text) {
       loc,
       milano: flags.includes('milano'),
       marta: flags.includes('marta'),
+      carnetOut: flags.includes('cout'),
+      carnetBack: flags.includes('cback'),
       travel,
       events
     };
@@ -830,7 +888,9 @@ function normalizeDay(d) {
     loc: d.loc || '',
     milano: !!d.milano,
     marta: !!d.marta,
-    travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '', booked: !!t.booked })) : [],
+    carnetOut: !!d.carnetOut,
+    carnetBack: !!d.carnetBack,
+    travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '', co: t.co || '', booked: !!t.booked })) : [],
     events: Array.isArray(d.events) ? d.events.map(e => ({ cat: e.cat || '', text: e.text || '' })) : []
   };
 }
@@ -838,8 +898,8 @@ function normalizeDay(d) {
 function isEmptyDay(d) {
   if (!d) return true;
   if (d.loc) return false;
-  if (d.milano || d.marta) return false;
-  if (d.travel && d.travel.some(t => t.from || t.to || t.time)) return false;
+  if (d.milano || d.marta || d.carnetOut || d.carnetBack) return false;
+  if (d.travel && d.travel.some(t => t.from || t.to || t.time || t.co)) return false;
   if (d.events && d.events.some(e => e.text)) return false;
   return true;
 }
@@ -987,9 +1047,10 @@ function travelChip(t) {
   const icon = t.mode === 'f' ? '✈️' : '🚆';
   const route = [t.from, t.to].filter(Boolean).join(' → ');
   const time = t.time ? ' · ' + t.time : '';
+  const co = t.co ? ' · ' + t.co : '';
   const cls = t.booked ? 'booked' : 'unbooked';
   const mark = t.booked ? ' ✓' : ' ✗';
-  return `<span class="chip travel ${cls}"><span class="ctxt">${icon} ${esc(route)}${esc(time)}${mark}</span></span>`;
+  return `<span class="chip travel ${cls}"><span class="ctxt">${icon} ${esc(route)}${esc(time)}${esc(co)}${mark}</span></span>`;
 }
 function eventChip(e) {
   const c = evCatColor(e.cat);
@@ -1003,6 +1064,7 @@ function renderMonth() {
   if (viewMode === 'grid') renderGrid(daysInMonth, tk);
   else renderList(daysInMonth, tk);
   renderSummary(daysInMonth);
+  renderCarnetCard();
 }
 
 function renderList(daysInMonth, tk) {
@@ -1024,6 +1086,10 @@ function renderList(daysInMonth, tk) {
     let top = '';
     if (dy.loc) { const dc = dayColor(dy); top += `<span class="loc-badge" style="background:${dc.bg};color:${dc.fg};">${esc(dy.loc)}</span>`; }
     if (hol) top += `<span class="holiday-badge">🇮🇹 ${esc(hol)}</span>`;
+    if (dy.carnetOut || dy.carnetBack) {
+      const lbl = (dy.carnetOut && dy.carnetBack) ? '🎫 ↔' : dy.carnetOut ? '🎫 →MI' : '🎫 ← MI';
+      top += `<span class="carnet-flag" title="Trenitalia carnet ticket">${lbl}</span>`;
+    }
 
     let chips = '';
     (dy.travel || []).forEach(t => { if (t.from || t.to || t.time) chips += travelChip(t); });
@@ -1078,7 +1144,7 @@ function renderGrid(daysInMonth, tk) {
     (dy.travel || []).forEach(t => { if (t.from || t.to) dots += `<span class="gtrav ${t.booked ? 'bk' : 'nb'}">${t.mode === 'f' ? '✈️' : '🚆'}</span>`; });
     (dy.events || []).forEach(e => { if (e.text) dots += `<span class="gdot" style="background:${catDot(e.cat)}"></span>`; });
 
-    const flags = dy.milano ? '(MI)' : '';
+    const flags = (dy.milano ? '(MI)' : '') + ((dy.carnetOut || dy.carnetBack) ? ' 🎫' : '');
     const martaDot = dy.marta ? `<span class="marta-dot" title="Marta here"></span>` : '';
 
     const dc = dayColor(dy);
@@ -1154,13 +1220,14 @@ function modeOptions(sel) {
 
 // Row builders for the dynamic flight/train and event lists.
 function legRowHtml(t) {
-  t = t || { mode: 't', from: '', to: '', time: '', booked: false };
+  t = t || { mode: 't', from: '', to: '', time: '', co: '', booked: false };
   const booked = !!t.booked;
   return `<div class="leg">
       <select class="mode" data-f="mode">${modeOptions(t.mode)}</select>
       <input class="text-in from" data-f="from" placeholder="From" value="${esc(t.from)}">
       <input class="text-in to" data-f="to" placeholder="To" value="${esc(t.to)}">
       <input class="text-in time" data-f="time" placeholder="hh:mm" value="${esc(t.time)}">
+      <input class="text-in co" data-f="co" placeholder="Airline / train co." value="${esc(t.co || '')}">
       <button type="button" class="book-btn ${booked ? 'booked' : 'unbooked'}" data-f="booked" data-booked="${booked ? '1' : '0'}">${booked ? '✓ Booked' : '✗ To buy'}</button>
       <button type="button" class="move-btn" title="Move to another day">📅</button>
       <input type="date" class="move-date" style="display:none" aria-label="Move to date">
@@ -1171,7 +1238,7 @@ function legRowHtml(t) {
 function readLegRow(row) {
   const get = f => { const el = row.querySelector(`[data-f="${f}"]`); return el ? el.value.trim() : ''; };
   const bookEl = row.querySelector('.book-btn');
-  return { mode: get('mode') || 't', from: get('from'), to: get('to'), time: get('time'), booked: bookEl ? bookEl.dataset.booked === '1' : false };
+  return { mode: get('mode') || 't', from: get('from'), to: get('to'), time: get('time'), co: get('co'), booked: bookEl ? bookEl.dataset.booked === '1' : false };
 }
 function evRowHtml(e) {
   e = e || { cat: '', text: '' };
@@ -1224,6 +1291,17 @@ function openDayEditor(key) {
       <div class="toggle-row" style="margin-top:6px;">
         <div><div class="tl-label">Marta here</div><div class="tl-sub">Marta is with me</div></div>
         <label class="switch"><input type="checkbox" id="edMarta" ${dy.marta ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="fieldcard">
+      <div class="field-label">🎫 Trenitalia carnet</div>
+      <div class="toggle-row">
+        <div><div class="tl-label">Carnet to Milano</div><div class="tl-sub">Use a carnet ticket (outbound)</div></div>
+        <label class="switch"><input type="checkbox" id="edCarnetOut" ${dy.carnetOut ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" style="margin-top:6px;">
+        <div><div class="tl-label">Carnet return</div><div class="tl-sub">Use a carnet ticket (back)</div></div>
+        <label class="switch"><input type="checkbox" id="edCarnetBack" ${dy.carnetBack ? 'checked' : ''}><span class="slider"></span></label>
       </div>
     </div>
     <div class="fieldcard">
@@ -1280,11 +1358,13 @@ function collectDayFromEditor() {
   const loc = document.getElementById('edLoc').value.trim();
   const milano = document.getElementById('edMilano').checked;
   const marta = document.getElementById('edMarta').checked;
+  const carnetOut = document.getElementById('edCarnetOut').checked;
+  const carnetBack = document.getElementById('edCarnetBack').checked;
 
   const legs = [];
   body.querySelectorAll('.leg').forEach(row => {
     const l = readLegRow(row);
-    if (l.from || l.to || l.time) legs.push(l);
+    if (l.from || l.to || l.time || l.co) legs.push(l);
   });
   const events = [];
   body.querySelectorAll('.evrow').forEach(row => {
@@ -1292,7 +1372,7 @@ function collectDayFromEditor() {
     const cat = row.querySelector('[data-f="cat"]').value;
     if (text) events.push({ cat, text });
   });
-  return { loc, milano, marta, travel: legs, events };
+  return { loc, milano, marta, carnetOut, carnetBack, travel: legs, events };
 }
 
 function saveDayEditor() {
@@ -1324,7 +1404,7 @@ function moveLegToDay(dateInput) {
   if (!targetKey || !editingKey) return;
   const row = dateInput.closest('.leg');
   const leg = readLegRow(row);
-  if (!(leg.from || leg.to || leg.time)) { toast('Fill the leg before moving'); return; }
+  if (!(leg.from || leg.to || leg.time || leg.co)) { toast('Fill the leg before moving'); return; }
   if (targetKey === editingKey) { toast('Already on this day'); return; }
   const tgt = cloneDay(DATA[targetKey] || normalizeDay({}));
   tgt.travel.push(leg);
@@ -1444,6 +1524,141 @@ function openColors() {
 function closeColors() { document.getElementById('colorsModal').classList.add('hidden'); }
 
 // ============================================================
+// TRENITALIA CARNET (ticket-booklet tracking)
+// A carnet = a booklet of N tickets. Each one-way commute you flag on a day
+// (carnetOut and/or carnetBack) uses one ticket. You record each carnet you
+// buy (date + size + company); the most recently bought one is the "current"
+// carnet, and the counter is how many flagged tickets fall on/after its date
+// (and before the next carnet's date). Stored + synced under
+// travelCalendar/carnets so it lives in the DB like everything else.
+// ============================================================
+const CARNETS_KEY = 'travelCalendarCarnets';
+const CARNET_DEFAULT_SIZE = 10;
+function getCarnets() {
+  try { const s = JSON.parse(localStorage.getItem(CARNETS_KEY)); if (Array.isArray(s)) return s; } catch (e) {}
+  return [];
+}
+function setCarnets(arr) { try { localStorage.setItem(CARNETS_KEY, JSON.stringify(Array.isArray(arr) ? arr : [])); } catch (e) {} }
+function normCarnet(c) {
+  return {
+    date: (c && c.date) || '',
+    size: Math.max(1, parseInt(c && c.size, 10) || CARNET_DEFAULT_SIZE),
+    company: (c && c.company) ? String(c.company) : 'Trenitalia'
+  };
+}
+function sortedCarnets() {
+  return getCarnets().map(normCarnet).filter(c => c.date)
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+}
+// number of flagged carnet tickets on days within [fromKey, toKeyExcl)
+function countCarnetTickets(fromKey, toKeyExcl) {
+  let n = 0;
+  Object.keys(DATA).forEach(k => {
+    if (fromKey && k < fromKey) return;
+    if (toKeyExcl && k >= toKeyExcl) return;
+    const dy = DATA[k]; if (!dy) return;
+    if (dy.carnetOut) n++;
+    if (dy.carnetBack) n++;
+  });
+  return n;
+}
+// each carnet with its used / remaining count (used between its date and the next)
+function carnetStats() {
+  const cs = sortedCarnets();
+  return cs.map((c, i) => {
+    const next = cs[i + 1] ? cs[i + 1].date : null;
+    const used = countCarnetTickets(c.date, next);
+    return Object.assign({}, c, { used, remaining: c.size - used, isCurrent: i === cs.length - 1 });
+  });
+}
+function currentCarnet() { const s = carnetStats(); return s.length ? s[s.length - 1] : null; }
+function addCarnet(date, size, company) {
+  date = (date || '').trim();
+  if (!date) { toast('Pick a purchase date'); return false; }
+  const list = getCarnets().map(normCarnet);
+  if (list.some(c => c.date === date)) { toast('A carnet already starts on that date'); return false; }
+  list.push(normCarnet({ date, size, company }));
+  setCarnets(list); cloudSyncCarnets(); return true;
+}
+function removeCarnet(date) {
+  setCarnets(getCarnets().map(normCarnet).filter(c => c.date !== date));
+  cloudSyncCarnets();
+}
+
+function fmtDateShort(key) { const [y, m, d] = key.split('-').map(Number); return `${d} ${MONTHS[m - 1].slice(0, 3)} ${y}`; }
+function carnetBar(used, size) {
+  const pct = size ? Math.round(used / size * 100) : 0;
+  const over = used > size;
+  return `<div class="carnet-bar"><div class="carnet-bar-fill ${over ? 'over' : ''}" style="width:${over ? 100 : Math.max(0, Math.min(100, pct))}%"></div></div>`;
+}
+function leftClass(left) { return left <= 0 ? 'bad' : left <= 2 ? 'warn' : 'ok'; }
+function leftLabel(left) { return left <= 0 ? 'none left' : left + ' left'; }
+
+// compact, always-visible carnet status card (above the summary)
+function renderCarnetCard() {
+  const el = document.getElementById('carnetCard'); if (!el) return;
+  const cur = currentCarnet();
+  if (!cur) {
+    el.innerHTML = `<span class="cc-icon">🎫</span><div class="cc-main"><div class="cc-line">No carnet set</div><div class="cc-sub">Tap to add the one you bought</div></div>`;
+    return;
+  }
+  el.innerHTML =
+    `<span class="cc-icon">🎫</span>` +
+    `<div class="cc-main">` +
+      `<div class="cc-line"><b>${esc(cur.company)}</b> · ${cur.used}/${cur.size} used ` +
+        `<span class="cc-left ${leftClass(cur.remaining)}">${leftLabel(cur.remaining)}</span></div>` +
+      carnetBar(cur.used, cur.size) +
+      `<div class="cc-sub">since ${fmtDateShort(cur.date)}</div>` +
+    `</div>`;
+}
+
+// full carnet manager (modal body)
+function renderCarnet() {
+  const body = document.getElementById('carnetBody'); if (!body) return;
+  const stats = carnetStats();
+  const cur = stats.length ? stats[stats.length - 1] : null;
+  let html = '';
+  if (cur) {
+    html += `<div class="fieldcard carnet-current">
+      <div class="field-label">Current carnet</div>
+      <div class="cc-line" style="font-size:15px;margin-bottom:6px;"><b>${esc(cur.company)}</b> · bought ${fmtDateShort(cur.date)}</div>
+      <div class="cc-big"><span class="cc-used">${cur.used}</span> / ${cur.size} tickets used
+        <span class="cc-left ${leftClass(cur.remaining)}">${leftLabel(cur.remaining)}</span></div>
+      ${carnetBar(cur.used, cur.size)}
+    </div>`;
+  } else {
+    html += `<div class="fieldcard"><p class="mini-note" style="margin:0;">No carnet recorded yet. Add the booklet you bought below, then flag the commute days that use it.</p></div>`;
+  }
+  html += `<div class="fieldcard">
+    <div class="field-label">New carnet bought</div>
+    <div class="carnet-form">
+      <input type="date" class="text-in" id="carnetDate">
+      <input type="number" class="text-in carnet-size" id="carnetSize" min="1" placeholder="Tickets" value="${CARNET_DEFAULT_SIZE}">
+    </div>
+    <input class="text-in" id="carnetCompany" placeholder="Company (e.g. Trenitalia)" value="${esc(cur ? cur.company : 'Trenitalia')}" style="margin-top:8px;">
+    <button type="button" class="btn btn-primary" id="carnetAdd" style="margin-top:10px;">Add carnet</button>
+    <p class="mini-note">The most recent carnet is your current one. Tickets you flag on/after its purchase date count against it.</p>
+  </div>`;
+  if (stats.length) {
+    html += `<div class="fieldcard"><div class="field-label">All carnets</div>`;
+    stats.slice().reverse().forEach(c => {
+      html += `<div class="carnet-row${c.isCurrent ? ' current' : ''}" data-date="${esc(c.date)}">
+        <div class="carnet-row-main">
+          <div class="carnet-row-top"><b>${esc(c.company)}</b>${c.isCurrent ? ' <span class="carnet-tag">current</span>' : ''}</div>
+          <div class="carnet-row-sub">${fmtDateShort(c.date)} · ${c.used}/${c.size} used · <span class="cc-left ${leftClass(c.remaining)}">${leftLabel(c.remaining)}</span></div>
+        </div>
+        <button type="button" class="row-del carnet-del" title="Delete">&times;</button>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  body.innerHTML = html;
+  const dEl = document.getElementById('carnetDate'); if (dEl && !dEl.value) dEl.value = todayKey();
+}
+function openCarnet() { renderCarnet(); document.getElementById('carnetModal').classList.remove('hidden'); }
+function closeCarnet() { document.getElementById('carnetModal').classList.add('hidden'); }
+
+// ============================================================
 // MISC
 // ============================================================
 let toastTimer = null;
@@ -1523,6 +1738,12 @@ function cloudSyncDay(key) {
 }
 function cloudSyncLocs() { if (window.fb && window.fb.ready) window.fb.setLocs(getLocs()); }
 function cloudSyncColors() { if (window.fb && window.fb.ready) window.fb.setColors(getColors()); }
+function cloudSyncCarnets() { if (window.fb && window.fb.ready) window.fb.setCarnets(getCarnets()); }
+function applyRemoteCarnets(arr) {
+  setCarnets(Array.isArray(arr) ? arr : []);
+  renderCarnetCard();
+  if (!document.getElementById('carnetModal').classList.contains('hidden')) renderCarnet();
+}
 function setSyncStatus(s) { const el = document.getElementById('statusDot'); if (el) el.className = 'dot ' + s; }
 
 // hooks the Firebase module calls
@@ -1530,12 +1751,14 @@ window.collectOverrides = collectOverrides;
 window.onRemoteDays = applyRemoteDays;
 window.onRemoteLocs = applyRemoteLocs;
 window.onRemoteColors = applyRemoteColors;
+window.onRemoteCarnets = applyRemoteCarnets;
 window.onSyncStatus = setSyncStatus;
 // local-customization getters used by the one-time migration (push local up if cloud empty)
 window.localLocsOverride = function () {
   try { const s = JSON.parse(localStorage.getItem(LOCS_KEY)); return (Array.isArray(s) && s.length) ? s : null; } catch (e) { return null; }
 };
 window.localColors = function () { return getColors(); };
+window.localCarnets = function () { const c = getCarnets(); return (Array.isArray(c) && c.length) ? c : null; };
 
 // ============================================================
 // INIT
@@ -1546,6 +1769,26 @@ document.getElementById('btnToday').addEventListener('click', gotoToday);
 document.getElementById('btnBulk').addEventListener('click', openBulk);
 document.getElementById('btnColors').addEventListener('click', openColors);
 document.getElementById('colorsClose').addEventListener('click', closeColors);
+document.getElementById('btnCarnet').addEventListener('click', openCarnet);
+document.getElementById('carnetClose').addEventListener('click', closeCarnet);
+document.getElementById('carnetCard').addEventListener('click', openCarnet);
+document.getElementById('carnetModal').addEventListener('click', e => { if (e.target.id === 'carnetModal') closeCarnet(); });
+document.getElementById('carnetBody').addEventListener('click', e => {
+  if (e.target.closest('#carnetAdd')) {
+    const date = document.getElementById('carnetDate').value;
+    const size = document.getElementById('carnetSize').value;
+    const company = document.getElementById('carnetCompany').value.trim() || 'Trenitalia';
+    if (addCarnet(date, size, company)) { renderCarnet(); renderCarnetCard(); toast('Carnet added'); }
+    return;
+  }
+  const del = e.target.closest('.carnet-del');
+  if (del) {
+    const row = del.closest('.carnet-row');
+    if (row && confirm('Delete this carnet record?')) {
+      removeCarnet(row.dataset.date); renderCarnet(); renderCarnetCard(); toast('Carnet removed');
+    }
+  }
+});
 
 // colour edits (delegated): live preview + sync
 document.getElementById('colorRows').addEventListener('input', e => {
@@ -1698,6 +1941,7 @@ try {
     setDays:   (o)    => set(ref(db, `${NODE}/days`), o || {}).catch(console.error),
     setLocs:   (a)    => set(ref(db, `${NODE}/locs`), a || []).catch(console.error),
     setColors: (o)    => set(ref(db, `${NODE}/colors`), o || {}).catch(console.error),
+    setCarnets:(a)    => set(ref(db, `${NODE}/carnets`), a || []).catch(console.error),
     removeAll: ()     => remove(ref(db, NODE)).catch(console.error)
   };
 
@@ -1706,7 +1950,7 @@ try {
   // One-time migration per node: on the first snapshot, if the cloud node is
   // empty, push this device's local customizations up (so nothing is lost and
   // other devices receive them). After that, the cloud is the source of truth.
-  let daysInit = false, locsInit = false, colorsInit = false;
+  let daysInit = false, locsInit = false, colorsInit = false, carnetsInit = false;
 
   onValue(ref(db, `${NODE}/days`), snap => {
     let remote = snap.val();
@@ -1743,6 +1987,18 @@ try {
       }
     }
     window.onRemoteColors && window.onRemoteColors(v);
+  });
+
+  onValue(ref(db, `${NODE}/carnets`), snap => {
+    const v = snap.val();
+    if (!carnetsInit) {
+      carnetsInit = true;
+      if (v === null) {
+        const c = window.localCarnets && window.localCarnets();
+        if (c) { window.fb.setCarnets(c); return; }
+      }
+    }
+    window.onRemoteCarnets && window.onRemoteCarnets(v);
   });
 } catch (e) {
   console.error("Calendar sync init failed:", e);
