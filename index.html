@@ -209,6 +209,7 @@ body {
 .leg .from, .leg .to { flex: 1; min-width: 70px; }
 .leg .time { width: 78px; }
 .leg .co { flex: 1; min-width: 100px; }
+.leg .ref { width: 84px; text-transform: uppercase; }
 .leg .mode { width: 96px; }
 .evrow .evtext { flex: 1; min-width: 120px; }
 .evrow .evcat { width: 130px; }
@@ -522,7 +523,7 @@ body {
 // CONFIG
 // ============================================================
 const STORAGE_KEY = 'travelCalendarData';
-const VERSION = 4;
+const VERSION = 5;
 // Current calendar view: 'list' (agenda) or 'grid' (month grid). Persisted per device.
 let viewMode = 'list';
 try { const v = localStorage.getItem('travelCalendarView'); if (v === 'grid' || v === 'list') viewMode = v; } catch (e) {}
@@ -801,12 +802,18 @@ const SEED = `
 // ============================================================
 // DATA MODEL
 // A day object: { loc, milano:bool, marta:bool,
-//   travel:[{mode:'f'|'t', from, to, time, booked:bool}],
+//   travel:[{mode:'f'|'t', from, to, time, co, ref, booked:bool}],
 //   events:[{cat, text}] }  (events and travel are unlimited)
 // ============================================================
 // Events and travel legs are now unlimited (added/removed dynamically in the editor).
 // In the SEED, a booked (already bought) leg is marked with a "!" on the mode,
 // e.g. "f!:FCO-OLB@16:00" = booked flight; "f:FCO-OLB@16:00" = still to buy.
+// An optional company follows a "#" and an optional booking reference follows a
+// "~" (last token), e.g. "f!:FCO-OLB@16:00#Ryanair~AB12CD". An upcoming FLIGHT
+// (today or later) only shows green when it is booked AND has a valid 6-char
+// alphanumeric ref; without the ref it gets the red "to buy" colour coding.
+// PAST flights keep the toggle-only rule (booked = green, no ref needed). Trains
+// ignore the ref entirely.
 
 function parseSeed(text) {
   const out = {};
@@ -830,6 +837,11 @@ function parseSeed(text) {
         const booked = mode.endsWith('!');
         if (booked) mode = mode.slice(0, -1);
         let rest = seg.slice(ci + 1);
+        // optional booking reference after a '~' (last token), e.g.
+        // "f:FCO-OLB@16:00#Ryanair~AB12CD". 6-char alphanumeric for flights.
+        let ref = '';
+        const tilde = rest.indexOf('~');
+        if (tilde >= 0) { ref = rest.slice(tilde + 1); rest = rest.slice(0, tilde); }
         // optional company after a '#', e.g. "f:FCO-OLB@16:00#Ryanair"
         let co = '';
         const hash = rest.indexOf('#');
@@ -840,7 +852,7 @@ function parseSeed(text) {
         const dash = route.indexOf('-');
         const from = dash >= 0 ? route.slice(0, dash) : route;
         const to = dash >= 0 ? route.slice(dash + 1) : '';
-        travel.push({ mode: mode || 't', from: from.trim(), to: to.trim(), time: time.trim(), co: co.trim(), booked });
+        travel.push({ mode: mode || 't', from: from.trim(), to: to.trim(), time: time.trim(), co: co.trim(), ref: ref.trim(), booked });
       });
     }
     const events = [];
@@ -890,7 +902,7 @@ function normalizeDay(d) {
     marta: !!d.marta,
     carnetOut: !!d.carnetOut,
     carnetBack: !!d.carnetBack,
-    travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '', co: t.co || '', booked: !!t.booked })) : [],
+    travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '', co: t.co || '', ref: t.ref || '', booked: !!t.booked })) : [],
     events: Array.isArray(d.events) ? d.events.map(e => ({ cat: e.cat || '', text: e.text || '' })) : []
   };
 }
@@ -1043,14 +1055,34 @@ function evCatHex(cat) { const c = getColors(); return c['ev:' + cat] || EV_COLO
 // solid dot colour for the compact grid view (a darker shade of the category colour)
 function catDot(cat) { return darken(evCatColor(cat).bg, 0.42); }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-function travelChip(t) {
+// A flight counts as confirmed (green) only when it is booked AND carries a valid
+// 6-char alphanumeric booking reference. Trains keep the toggle-only rule. A
+// flight that is booked but has no/invalid ref is shown red (same as unbooked).
+function validRef(r) { return /^[A-Za-z0-9]{6}$/.test((r || '').trim()); }
+function legConfirmed(t, dayKey) {
+  if (!t.booked) return false;
+  if (t.mode === 'f') {
+    // Past flights keep the toggle-only rule (green when booked, no ref needed).
+    // Only today/future flights require a valid 6-char booking reference.
+    if (dayKey && dayKey < todayKey()) return true;
+    return validRef(t.ref);
+  }
+  return true;
+}
+function travelChip(t, dayKey) {
   const icon = t.mode === 'f' ? '✈️' : '🚆';
   const route = [t.from, t.to].filter(Boolean).join(' → ');
   const time = t.time ? ' · ' + t.time : '';
   const co = t.co ? ' · ' + t.co : '';
-  const cls = t.booked ? 'booked' : 'unbooked';
-  const mark = t.booked ? ' ✓' : ' ✗';
-  return `<span class="chip travel ${cls}"><span class="ctxt">${icon} ${esc(route)}${esc(time)}${esc(co)}${mark}</span></span>`;
+  const confirmed = legConfirmed(t, dayKey);
+  const cls = confirmed ? 'booked' : 'unbooked';
+  // flights flagged green only with a valid booking ref; show it / flag if missing
+  const isPast = dayKey && dayKey < todayKey();
+  const refTxt = t.mode === 'f'
+    ? (validRef(t.ref) ? ' · ' + t.ref.trim().toUpperCase() : (t.booked && !isPast ? ' · no ref' : ''))
+    : '';
+  const mark = confirmed ? ' ✓' : ' ✗';
+  return `<span class="chip travel ${cls}"><span class="ctxt">${icon} ${esc(route)}${esc(time)}${esc(co)}${esc(refTxt)}${mark}</span></span>`;
 }
 function eventChip(e) {
   const c = evCatColor(e.cat);
@@ -1092,7 +1124,7 @@ function renderList(daysInMonth, tk) {
     }
 
     let chips = '';
-    (dy.travel || []).forEach(t => { if (t.from || t.to || t.time) chips += travelChip(t); });
+    (dy.travel || []).forEach(t => { if (t.from || t.to || t.time) chips += travelChip(t, key); });
     (dy.events || []).forEach(e => { if (e.text) chips += eventChip(e); });
 
     let body;
@@ -1141,7 +1173,7 @@ function renderGrid(daysInMonth, tk) {
     if (weekend && !dy.loc) classes.push('wknd');
 
     let dots = '';
-    (dy.travel || []).forEach(t => { if (t.from || t.to) dots += `<span class="gtrav ${t.booked ? 'bk' : 'nb'}">${t.mode === 'f' ? '✈️' : '🚆'}</span>`; });
+    (dy.travel || []).forEach(t => { if (t.from || t.to) dots += `<span class="gtrav ${legConfirmed(t, key) ? 'bk' : 'nb'}">${t.mode === 'f' ? '✈️' : '🚆'}</span>`; });
     (dy.events || []).forEach(e => { if (e.text) dots += `<span class="gdot" style="background:${catDot(e.cat)}"></span>`; });
 
     const flags = (dy.milano ? '(MI)' : '') + ((dy.carnetOut || dy.carnetBack) ? ' 🎫' : '');
@@ -1220,14 +1252,16 @@ function modeOptions(sel) {
 
 // Row builders for the dynamic flight/train and event lists.
 function legRowHtml(t) {
-  t = t || { mode: 't', from: '', to: '', time: '', co: '', booked: false };
+  t = t || { mode: 't', from: '', to: '', time: '', co: '', ref: '', booked: false };
   const booked = !!t.booked;
+  const isFlight = t.mode === 'f';
   return `<div class="leg">
       <select class="mode" data-f="mode">${modeOptions(t.mode)}</select>
       <input class="text-in from" data-f="from" placeholder="From" value="${esc(t.from)}">
       <input class="text-in to" data-f="to" placeholder="To" value="${esc(t.to)}">
       <input class="text-in time" data-f="time" placeholder="hh:mm" value="${esc(t.time)}">
       <input class="text-in co" data-f="co" placeholder="Airline / train co." value="${esc(t.co || '')}">
+      <input class="text-in ref" data-f="ref" placeholder="Ref (6)" maxlength="6" value="${esc(t.ref || '')}" style="${isFlight ? '' : 'display:none'}" title="Flight booking reference (6-char alphanumeric)">
       <button type="button" class="book-btn ${booked ? 'booked' : 'unbooked'}" data-f="booked" data-booked="${booked ? '1' : '0'}">${booked ? '✓ Booked' : '✗ To buy'}</button>
       <button type="button" class="move-btn" title="Move to another day">📅</button>
       <input type="date" class="move-date" style="display:none" aria-label="Move to date">
@@ -1238,7 +1272,7 @@ function legRowHtml(t) {
 function readLegRow(row) {
   const get = f => { const el = row.querySelector(`[data-f="${f}"]`); return el ? el.value.trim() : ''; };
   const bookEl = row.querySelector('.book-btn');
-  return { mode: get('mode') || 't', from: get('from'), to: get('to'), time: get('time'), co: get('co'), booked: bookEl ? bookEl.dataset.booked === '1' : false };
+  return { mode: get('mode') || 't', from: get('from'), to: get('to'), time: get('time'), co: get('co'), ref: get('ref'), booked: bookEl ? bookEl.dataset.booked === '1' : false };
 }
 function evRowHtml(e) {
   e = e || { cat: '', text: '' };
@@ -1364,7 +1398,7 @@ function collectDayFromEditor() {
   const legs = [];
   body.querySelectorAll('.leg').forEach(row => {
     const l = readLegRow(row);
-    if (l.from || l.to || l.time || l.co) legs.push(l);
+    if (l.from || l.to || l.time || l.co || l.ref) legs.push(l);
   });
   const events = [];
   body.querySelectorAll('.evrow').forEach(row => {
@@ -1404,7 +1438,7 @@ function moveLegToDay(dateInput) {
   if (!targetKey || !editingKey) return;
   const row = dateInput.closest('.leg');
   const leg = readLegRow(row);
-  if (!(leg.from || leg.to || leg.time || leg.co)) { toast('Fill the leg before moving'); return; }
+  if (!(leg.from || leg.to || leg.time || leg.co || leg.ref)) { toast('Fill the leg before moving'); return; }
   if (targetKey === editingKey) { toast('Already on this day'); return; }
   const tgt = cloneDay(DATA[targetKey] || normalizeDay({}));
   tgt.travel.push(leg);
@@ -1873,6 +1907,14 @@ document.getElementById('dayBody').addEventListener('click', e => {
 document.getElementById('dayBody').addEventListener('change', e => {
   const md = e.target.closest('.move-date');
   if (md) { moveLegToDay(md); return; }
+  // mode changed: show the booking-ref input for flights, hide for trains
+  const mode = e.target.closest('.mode');
+  if (mode) {
+    const row = mode.closest('.leg');
+    const refIn = row && row.querySelector('.ref');
+    if (refIn) refIn.style.display = mode.value === 'f' ? '' : 'none';
+    return;
+  }
   const sel = e.target.closest('.evcat');
   if (!sel) return;
   const row = sel.closest('.evrow'); if (!row) return;
