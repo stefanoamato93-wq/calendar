@@ -212,6 +212,7 @@ body {
 .leg .ref { width: 84px; text-transform: uppercase; }
 .leg .mode { width: 96px; }
 .evrow .evtext { flex: 1; min-width: 120px; }
+.evrow .evtime { width: 78px; }
 .evrow .evcat { width: 130px; }
 .mini-note { font-size: 11.5px; color: var(--secondary); margin-top: 4px; }
 
@@ -472,8 +473,8 @@ body {
           <label class="switch"><input type="checkbox" id="bulkAddEv"><span class="slider"></span></label>
         </div>
         <div class="evrow" style="margin-bottom:0;">
+          <input class="text-in evtime" id="bulkEvTime" placeholder="hh:mm">
           <input class="text-in evtext" id="bulkEvText" placeholder="Event">
-          <select class="evcat" id="bulkEvCat"></select>
         </div>
       </div>
       <button class="btn btn-primary" id="bulkApply">Apply to range</button>
@@ -523,7 +524,7 @@ body {
 // CONFIG
 // ============================================================
 const STORAGE_KEY = 'travelCalendarData';
-const VERSION = 5;
+const VERSION = 7;
 // Current calendar view: 'list' (agenda) or 'grid' (month grid). Persisted per device.
 let viewMode = 'list';
 try { const v = localStorage.getItem('travelCalendarView'); if (v === 'grid' || v === 'list') viewMode = v; } catch (e) {}
@@ -572,6 +573,11 @@ const EV_COLORS_DEFAULT = {
   '': '#e5e5ea', work: '#bcd5f2', social: '#d9c2e9',
   appt: '#fbe3a3', leave_ok: '#bfe3c0', leave_todo: '#f3b4b4'
 };
+
+// Events are no longer colour-coded by type: every event/appointment uses one
+// bright, editable colour (stored under the 'ev' colour key, edit in the 🎨 modal).
+const EV_KEY = 'ev';
+const EV_DEFAULT = '#ffcc00';
 
 // ============================================================
 // SEED (published defaults). Compact line format:
@@ -861,8 +867,12 @@ function parseSeed(text) {
         seg = seg.trim(); if (!seg) return;
         const ci = seg.indexOf(':');
         const cat = ci >= 0 ? seg.slice(0, ci) : '';
-        const txt = ci >= 0 ? seg.slice(ci + 1) : seg;
-        events.push({ cat: cat.trim(), text: txt.trim() });
+        let txt = ci >= 0 ? seg.slice(ci + 1) : seg;
+        // optional time at the end as "@HH:MM", e.g. "appt:Dentista@18:30"
+        let time = '';
+        const tm = txt.match(/@(\d{1,2}:\d{2})\s*$/);
+        if (tm) { time = tm[1]; txt = txt.slice(0, tm.index); }
+        events.push({ cat: cat.trim(), text: txt.trim(), time: time.trim() });
       });
     }
     out[date] = {
@@ -903,7 +913,7 @@ function normalizeDay(d) {
     carnetOut: !!d.carnetOut,
     carnetBack: !!d.carnetBack,
     travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '', co: t.co || '', ref: t.ref || '', booked: !!t.booked })) : [],
-    events: Array.isArray(d.events) ? d.events.map(e => ({ cat: e.cat || '', text: e.text || '' })) : []
+    events: Array.isArray(d.events) ? d.events.map(e => ({ cat: e.cat || '', text: e.text || '', time: e.time || '' })) : []
   };
 }
 
@@ -1054,6 +1064,10 @@ function evCatColor(cat) {
 function evCatHex(cat) { const c = getColors(); return c['ev:' + cat] || EV_COLORS_DEFAULT[cat] || EV_COLORS_DEFAULT['']; }
 // solid dot colour for the compact grid view (a darker shade of the category colour)
 function catDot(cat) { return darken(evCatColor(cat).bg, 0.42); }
+// single editable colour for ALL events/appointments (override under 'ev', else default)
+function eventColor() { const c = getColors(); const bg = c[EV_KEY] || EV_DEFAULT; return { bg, fg: readableFg(bg) }; }
+function eventHex() { const c = getColors(); return c[EV_KEY] || EV_DEFAULT; }
+function eventDotColor() { return darken(eventColor().bg, 0.42); }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 // A flight counts as confirmed (green) only when it is booked AND carries a valid
 // 6-char alphanumeric booking reference. Trains keep the toggle-only rule. A
@@ -1085,8 +1099,9 @@ function travelChip(t, dayKey) {
   return `<span class="chip travel ${cls}"><span class="ctxt">${icon} ${esc(route)}${esc(time)}${esc(co)}${esc(refTxt)}${mark}</span></span>`;
 }
 function eventChip(e) {
-  const c = evCatColor(e.cat);
-  return `<span class="chip" style="background:${c.bg};color:${c.fg};"><span class="ctxt">${esc(e.text)}</span></span>`;
+  const c = eventColor();
+  const time = e.time ? esc(e.time) + ' · ' : '';
+  return `<span class="chip" style="background:${c.bg};color:${c.fg};"><span class="ctxt">${time}${esc(e.text)}</span></span>`;
 }
 
 function renderMonth() {
@@ -1119,8 +1134,12 @@ function renderList(daysInMonth, tk) {
     if (dy.loc) { const dc = dayColor(dy); top += `<span class="loc-badge" style="background:${dc.bg};color:${dc.fg};">${esc(dy.loc)}</span>`; }
     if (hol) top += `<span class="holiday-badge">🇮🇹 ${esc(hol)}</span>`;
     if (dy.carnetOut || dy.carnetBack) {
-      const lbl = (dy.carnetOut && dy.carnetBack) ? '🎫 ↔' : dy.carnetOut ? '🎫 →MI' : '🎫 ← MI';
-      top += `<span class="carnet-flag" title="Trenitalia carnet ticket">${lbl}</span>`;
+      if (dy.carnetOut && dy.carnetBack) {
+        top += `<span class="carnet-flag" title="Trenitalia carnet ticket (outbound)">🎫 →MI</span><span class="carnet-flag" title="Trenitalia carnet ticket (return)">🎫 ← MI</span>`;
+      } else {
+        const lbl = dy.carnetOut ? '🎫 →MI' : '🎫 ← MI';
+        top += `<span class="carnet-flag" title="Trenitalia carnet ticket">${lbl}</span>`;
+      }
     }
 
     let chips = '';
@@ -1135,11 +1154,10 @@ function renderList(daysInMonth, tk) {
              (chips ? `<div class="chips">${chips}</div>` : '');
     }
 
-    const milanoTag = dy.milano ? `<span class="dmilano">(Milano)</span>` : '';
     const martaDot = dy.marta ? `<span class="marta-dot" title="Marta here"></span>` : '';
 
     html += `<div class="${classes.join(' ')}" data-key="${key}">
-      <div class="day-date"><span class="dow">${DOW[dow]}</span><span class="dnum">${d}</span>${milanoTag}</div>
+      <div class="day-date"><span class="dow">${DOW[dow]}</span><span class="dnum">${d}</span></div>
       <div class="day-body">${body}</div>
       ${martaDot}
     </div>`;
@@ -1174,9 +1192,10 @@ function renderGrid(daysInMonth, tk) {
 
     let dots = '';
     (dy.travel || []).forEach(t => { if (t.from || t.to) dots += `<span class="gtrav ${legConfirmed(t, key) ? 'bk' : 'nb'}">${t.mode === 'f' ? '✈️' : '🚆'}</span>`; });
-    (dy.events || []).forEach(e => { if (e.text) dots += `<span class="gdot" style="background:${catDot(e.cat)}"></span>`; });
+    (dy.events || []).forEach(e => { if (e.text) dots += `<span class="gdot" style="background:${eventDotColor()}"></span>`; });
 
-    const flags = (dy.milano ? '(MI)' : '') + ((dy.carnetOut || dy.carnetBack) ? ' 🎫' : '');
+    const carnetN = (dy.carnetOut ? 1 : 0) + (dy.carnetBack ? 1 : 0);
+    const flags = carnetN ? '🎫'.repeat(carnetN) : '';
     const martaDot = dy.marta ? `<span class="marta-dot" title="Marta here"></span>` : '';
 
     const dc = dayColor(dy);
@@ -1203,9 +1222,12 @@ function renderGrid(daysInMonth, tk) {
 
 function renderSummary(daysInMonth) {
   const counts = {};
+  let milanoDays = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const key = ymd(viewYear, viewMonth, d);
-    const dy = DATA[key]; if (!dy || !dy.loc) continue;
+    const dy = DATA[key]; if (!dy) continue;
+    if (dy.milano) milanoDays++;
+    if (!dy.loc) continue;
     counts[dy.loc] = (counts[dy.loc] || 0) + 1;
   }
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
@@ -1217,6 +1239,10 @@ function renderSummary(daysInMonth) {
       const cc = cityColor(name);
       html += `<span class="tally" style="background:${cc.bg};color:${cc.fg};"><span class="t-name">${esc(name)}</span><span class="t-count" style="color:inherit;">${c}</span></span>`;
     });
+  }
+  if (milanoDays) {
+    const mc = commuteColor();
+    html += `<span class="tally" style="background:${mc.bg};color:${mc.fg};" title="Days working in Milano (carnet days)"><span class="t-name">🎫 Milano</span><span class="t-count" style="color:inherit;">${milanoDays}</span></span>`;
   }
   html += `</div>`;
   document.getElementById('summaryCard').innerHTML = html;
@@ -1275,12 +1301,12 @@ function readLegRow(row) {
   return { mode: get('mode') || 't', from: get('from'), to: get('to'), time: get('time'), co: get('co'), ref: get('ref'), booked: bookEl ? bookEl.dataset.booked === '1' : false };
 }
 function evRowHtml(e) {
-  e = e || { cat: '', text: '' };
-  const c = evCatColor(e.cat);
+  e = e || { cat: '', text: '', time: '' };
   return `<div class="evrow">
-      <span class="ev-swatch" style="background:${c.bg};"></span>
-      <input class="text-in evtext" data-f="text" placeholder="Event" value="${esc(e.text)}">
-      <select class="evcat" data-f="cat">${catOptions(e.cat)}</select>
+      <input class="text-in evtime" data-f="time" placeholder="hh:mm" value="${esc(e.time || '')}">
+      <input class="text-in evtext" data-f="text" placeholder="Appointment / event" value="${esc(e.text)}">
+      <button type="button" class="move-btn" title="Move to another day">📅</button>
+      <input type="date" class="move-date" style="display:none" aria-label="Move to date">
       <button type="button" class="row-del" title="Remove">&times;</button>
     </div>`;
 }
@@ -1301,8 +1327,6 @@ function openDayEditor(key) {
 
   const legsHtml = dy.travel.map(legRowHtml).join('');
   const evsHtml = dy.events.map(evRowHtml).join('');
-  const LEG_SHORT = { work: 'Work', social: 'Social', appt: 'Appt', leave_ok: 'Leave ok', leave_todo: 'Leave todo' };
-  const legendHtml = Object.keys(LEG_SHORT).map(k => { const c = evCatColor(k); return `<span class="lg chip" style="background:${c.bg};color:${c.fg};">${LEG_SHORT[k]}</span>`; }).join('');
 
   // Order: travel, events, flags, then "Where will I be?" at the bottom.
   document.getElementById('dayBody').innerHTML = `
@@ -1315,7 +1339,6 @@ function openDayEditor(key) {
       <div class="field-label">Events</div>
       <div id="evsList">${evsHtml}</div>
       <button type="button" class="add-btn" id="addEv">+ Add event</button>
-      <div class="legend">${legendHtml}</div>
     </div>
     <div class="fieldcard">
       <div class="toggle-row">
@@ -1403,8 +1426,9 @@ function collectDayFromEditor() {
   const events = [];
   body.querySelectorAll('.evrow').forEach(row => {
     const text = row.querySelector('[data-f="text"]').value.trim();
-    const cat = row.querySelector('[data-f="cat"]').value;
-    if (text) events.push({ cat, text });
+    const timeEl = row.querySelector('[data-f="time"]');
+    const time = timeEl ? timeEl.value.trim() : '';
+    if (text) events.push({ cat: '', text, time });
   });
   return { loc, milano, marta, carnetOut, carnetBack, travel: legs, events };
 }
@@ -1421,6 +1445,8 @@ function saveDayEditor() {
 function clearDay() {
   if (!editingKey) return;
   const key = editingKey;
+  const [y, m, d] = key.split('-').map(Number);
+  if (!confirm(`Clear everything on ${d} ${MONTHS[m - 1]} ${y}?`)) return;
   DATA[key] = normalizeDay({});
   saveData();
   cloudSyncDay(key);
@@ -1440,6 +1466,9 @@ function moveLegToDay(dateInput) {
   const leg = readLegRow(row);
   if (!(leg.from || leg.to || leg.time || leg.co || leg.ref)) { toast('Fill the leg before moving'); return; }
   if (targetKey === editingKey) { toast('Already on this day'); return; }
+  const [, tmm, tdd] = targetKey.split('-').map(Number);
+  const what = (leg.mode === 'f' ? '✈️ flight' : '🚆 train') + ' ' + [leg.from, leg.to].filter(Boolean).join('→');
+  if (!confirm(`Move ${what} to ${tdd} ${MONTHS[tmm - 1]}?`)) return;
   const tgt = cloneDay(DATA[targetKey] || normalizeDay({}));
   tgt.travel.push(leg);
   DATA[targetKey] = normalizeDay(tgt);
@@ -1454,8 +1483,30 @@ function moveLegToDay(dateInput) {
   toast(`Moved to ${dd} ${MONTHS[mm - 1]}`);
 }
 
-// ============================================================
-// BULK EDIT (apply changes across a date range)
+// Move a single event/appointment to another day (same pattern as moveLegToDay).
+function moveEvToDay(dateInput) {
+  const targetKey = dateInput.value;
+  if (!targetKey || !editingKey) return;
+  const row = dateInput.closest('.evrow');
+  const text = row.querySelector('[data-f="text"]').value.trim();
+  const timeEl = row.querySelector('[data-f="time"]');
+  const time = timeEl ? timeEl.value.trim() : '';
+  if (!text) { toast('Fill the event before moving'); return; }
+  if (targetKey === editingKey) { toast('Already on this day'); return; }
+  const [, tmm, tdd] = targetKey.split('-').map(Number);
+  if (!confirm(`Move "${text}" to ${tdd} ${MONTHS[tmm - 1]}?`)) return;
+  const tgt = cloneDay(DATA[targetKey] || normalizeDay({}));
+  tgt.events.push({ cat: '', text, time });
+  DATA[targetKey] = normalizeDay(tgt);
+  row.remove();
+  DATA[editingKey] = collectDayFromEditor();
+  saveData();
+  cloudSyncDay(targetKey);
+  cloudSyncDay(editingKey);
+  renderMonth();
+  const [, mm, dd] = targetKey.split('-').map(Number);
+  toast(`Moved to ${dd} ${MONTHS[mm - 1]}`);
+}
 // ============================================================
 // City selection chips for the bulk sheet (selection only, no delete control).
 function bulkLocChipsHtml(selected) {
@@ -1478,7 +1529,7 @@ function openBulk() {
   document.getElementById('bulkLoc').value = '';
   document.getElementById('bulkAddEv').checked = false;
   document.getElementById('bulkEvText').value = '';
-  document.getElementById('bulkEvCat').innerHTML = catOptions('');
+  document.getElementById('bulkEvTime').value = '';
   renderBulkChips('');
   document.getElementById('bulkModal').classList.remove('hidden');
 }
@@ -1511,14 +1562,14 @@ function applyBulk(clearMode) {
     const loc = document.getElementById('bulkLoc').value.trim();
     const addEv = document.getElementById('bulkAddEv').checked;
     const evText = document.getElementById('bulkEvText').value.trim();
-    const evCat = document.getElementById('bulkEvCat').value;
+    const evTime = document.getElementById('bulkEvTime').value.trim();
     if (!marta && !milano && !setLoc && !(addEv && evText)) { toast('Nothing to apply'); return; }
     keys.forEach(key => {
       const dy = cloneDay(DATA[key] || normalizeDay({}));
       if (marta) dy.marta = (marta === 'on');
       if (milano) dy.milano = (milano === 'on');
       if (setLoc) dy.loc = loc;
-      if (addEv && evText) dy.events.push({ cat: evCat, text: evText });
+      if (addEv && evText) dy.events.push({ cat: '', text: evText, time: evTime });
       DATA[key] = normalizeDay(dy);
     });
   }
@@ -1533,9 +1584,12 @@ function applyBulk(clearMode) {
 // COLOURS modal
 // ============================================================
 function colorRowHtml(key, label, extraClass) {
-  const isEv = key.indexOf('ev:') === 0;
-  const bg = isEv ? evCatColor(key.slice(3)).bg : cityColor(key).bg;
-  const hex = isEv ? evCatHex(key.slice(3)) : cityHex(key);
+  const isEvCat = key.indexOf('ev:') === 0;
+  const isEv = key === EV_KEY;
+  let bg, hex;
+  if (isEv) { bg = eventColor().bg; hex = eventHex(); }
+  else if (isEvCat) { bg = evCatColor(key.slice(3)).bg; hex = evCatHex(key.slice(3)); }
+  else { bg = cityColor(key).bg; hex = cityHex(key); }
   const overridden = !!getColors()[key];
   return `<div class="color-row ${extraClass || ''}" data-key="${esc(key)}">
       <span class="swatch" style="background:${bg}"></span>
@@ -1547,8 +1601,8 @@ function colorRowHtml(key, label, extraClass) {
 function renderColorRows() {
   let html = colorRowHtml(COMMUTE_KEY, 'Milano commute', 'commute');
   getLocs().forEach(loc => { html += colorRowHtml(loc, loc); });
-  html += `<div class="color-section">Event types</div>`;
-  EVENT_CATS.filter(c => c.key).forEach(c => { html += colorRowHtml('ev:' + c.key, c.label); });
+  html += `<div class="color-section">Events</div>`;
+  html += colorRowHtml(EV_KEY, 'Events / appointments');
   document.getElementById('colorRows').innerHTML = html;
 }
 function openColors() {
@@ -1886,7 +1940,7 @@ document.getElementById('dayBody').addEventListener('click', e => {
   }
   const move = e.target.closest('.move-btn');
   if (move) {
-    const di = move.closest('.leg').querySelector('.move-date');
+    const di = move.closest('.leg, .evrow').querySelector('.move-date');
     if (di.style.display === 'none') {
       di.style.display = '';
       if (!di.value) di.value = editingKey || '';
@@ -1903,10 +1957,10 @@ document.getElementById('dayBody').addEventListener('click', e => {
   if (row) row.remove();
 });
 
-// event category changed / leg moved to another day
+// event moved / leg moved to another day; flight mode changed
 document.getElementById('dayBody').addEventListener('change', e => {
   const md = e.target.closest('.move-date');
-  if (md) { moveLegToDay(md); return; }
+  if (md) { if (md.closest('.evrow')) moveEvToDay(md); else moveLegToDay(md); return; }
   // mode changed: show the booking-ref input for flights, hide for trains
   const mode = e.target.closest('.mode');
   if (mode) {
@@ -1915,11 +1969,6 @@ document.getElementById('dayBody').addEventListener('change', e => {
     if (refIn) refIn.style.display = mode.value === 'f' ? '' : 'none';
     return;
   }
-  const sel = e.target.closest('.evcat');
-  if (!sel) return;
-  const row = sel.closest('.evrow'); if (!row) return;
-  const sw = row.querySelector('.ev-swatch');
-  if (sw) sw.style.background = evCatColor(sel.value).bg;
 });
 
 // swipe left / right anywhere on the calendar area to change month
