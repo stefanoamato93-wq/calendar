@@ -452,14 +452,6 @@ body {
         </select>
       </div>
       <div class="fieldcard">
-        <div class="field-label">Working in Milano</div>
-        <select class="text-in" id="bulkMilano">
-          <option value="">No change</option>
-          <option value="on">Set Milano</option>
-          <option value="off">Remove Milano</option>
-        </select>
-      </div>
-      <div class="fieldcard">
         <div class="toggle-row" style="margin-bottom:8px;">
           <div><div class="tl-label">Set location</div><div class="tl-sub">Overwrite on every day in range</div></div>
           <label class="switch"><input type="checkbox" id="bulkSetLoc"><span class="slider"></span></label>
@@ -524,7 +516,7 @@ body {
 // CONFIG
 // ============================================================
 const STORAGE_KEY = 'travelCalendarData';
-const VERSION = 7;
+const VERSION = 8;
 // Current calendar view: 'list' (agenda) or 'grid' (month grid). Persisted per device.
 let viewMode = 'list';
 try { const v = localStorage.getItem('travelCalendarView'); if (v === 'grid' || v === 'list') viewMode = v; } catch (e) {}
@@ -877,7 +869,7 @@ function parseSeed(text) {
     }
     out[date] = {
       loc,
-      milano: flags.includes('milano'),
+      milano: flags.includes('cout') || flags.includes('cback'),
       marta: flags.includes('marta'),
       carnetOut: flags.includes('cout'),
       carnetBack: flags.includes('cback'),
@@ -906,12 +898,15 @@ function loadData() {
 function cloneDay(d) { return JSON.parse(JSON.stringify(d)); }
 function normalizeDay(d) {
   d = d || {};
+  // "Working in Milano" is no longer a separate flag: a day counts as Milano
+  // when it uses at least one carnet ticket (outbound and/or return).
+  const carnetOut = !!d.carnetOut, carnetBack = !!d.carnetBack;
   return {
     loc: d.loc || '',
-    milano: !!d.milano,
+    milano: carnetOut || carnetBack,
     marta: !!d.marta,
-    carnetOut: !!d.carnetOut,
-    carnetBack: !!d.carnetBack,
+    carnetOut: carnetOut,
+    carnetBack: carnetBack,
     travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '', co: t.co || '', ref: t.ref || '', booked: !!t.booked })) : [],
     events: Array.isArray(d.events) ? d.events.map(e => ({ cat: e.cat || '', text: e.text || '', time: e.time || '' })) : []
   };
@@ -1342,10 +1337,6 @@ function openDayEditor(key) {
     </div>
     <div class="fieldcard">
       <div class="toggle-row">
-        <div><div class="tl-label">Working in Milano</div><div class="tl-sub">Office / commute day</div></div>
-        <label class="switch"><input type="checkbox" id="edMilano" ${dy.milano ? 'checked' : ''}><span class="slider"></span></label>
-      </div>
-      <div class="toggle-row" style="margin-top:6px;">
         <div><div class="tl-label">Marta here</div><div class="tl-sub">Marta is with me</div></div>
         <label class="switch"><input type="checkbox" id="edMarta" ${dy.marta ? 'checked' : ''}><span class="slider"></span></label>
       </div>
@@ -1360,6 +1351,7 @@ function openDayEditor(key) {
         <div><div class="tl-label">Carnet return</div><div class="tl-sub">Use a carnet ticket (back)</div></div>
         <label class="switch"><input type="checkbox" id="edCarnetBack" ${dy.carnetBack ? 'checked' : ''}><span class="slider"></span></label>
       </div>
+      <p class="mini-note">Using at least one carnet marks the day as working in Milano (darker grey on Torino days).</p>
     </div>
     <div class="fieldcard">
       <div class="field-label">Where will I be?</div>
@@ -1413,10 +1405,10 @@ function openDayEditor(key) {
 function collectDayFromEditor() {
   const body = document.getElementById('dayBody');
   const loc = document.getElementById('edLoc').value.trim();
-  const milano = document.getElementById('edMilano').checked;
   const marta = document.getElementById('edMarta').checked;
   const carnetOut = document.getElementById('edCarnetOut').checked;
   const carnetBack = document.getElementById('edCarnetBack').checked;
+  const milano = carnetOut || carnetBack;   // Milano = at least one carnet ticket
 
   const legs = [];
   body.querySelectorAll('.leg').forEach(row => {
@@ -1524,7 +1516,6 @@ function openBulk() {
   document.getElementById('bulkFrom').value = ymd(viewYear, viewMonth, 1);
   document.getElementById('bulkTo').value = ymd(viewYear, viewMonth, dim);
   document.getElementById('bulkMarta').value = '';
-  document.getElementById('bulkMilano').value = '';
   document.getElementById('bulkSetLoc').checked = false;
   document.getElementById('bulkLoc').value = '';
   document.getElementById('bulkAddEv').checked = false;
@@ -1557,17 +1548,15 @@ function applyBulk(clearMode) {
     keys.forEach(key => { DATA[key] = normalizeDay({}); });
   } else {
     const marta = document.getElementById('bulkMarta').value;
-    const milano = document.getElementById('bulkMilano').value;
     const setLoc = document.getElementById('bulkSetLoc').checked;
     const loc = document.getElementById('bulkLoc').value.trim();
     const addEv = document.getElementById('bulkAddEv').checked;
     const evText = document.getElementById('bulkEvText').value.trim();
     const evTime = document.getElementById('bulkEvTime').value.trim();
-    if (!marta && !milano && !setLoc && !(addEv && evText)) { toast('Nothing to apply'); return; }
+    if (!marta && !setLoc && !(addEv && evText)) { toast('Nothing to apply'); return; }
     keys.forEach(key => {
       const dy = cloneDay(DATA[key] || normalizeDay({}));
       if (marta) dy.marta = (marta === 'on');
-      if (milano) dy.milano = (milano === 'on');
       if (setLoc) dy.loc = loc;
       if (addEv && evText) dy.events.push({ cat: '', text: evText, time: evTime });
       DATA[key] = normalizeDay(dy);
