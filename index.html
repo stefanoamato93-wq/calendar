@@ -209,7 +209,7 @@ body {
 .leg .from, .leg .to { flex: 1; min-width: 70px; }
 .leg .time { width: 78px; }
 .leg .co { flex: 1; min-width: 100px; }
-.leg .ref { width: 84px; text-transform: uppercase; }
+.leg .ref { width: 100px; text-transform: uppercase; letter-spacing: 1.5px; text-align: center; font-weight: 700; }
 .leg .mode { width: 96px; }
 .evrow .evtext { flex: 1; min-width: 120px; }
 .evrow .evtime { width: 78px; }
@@ -244,6 +244,18 @@ body {
 }
 .book-btn.booked { background: #1ea84a; color: #fff; }
 .book-btn.unbooked { background: #ff2d20; color: #fff; }
+/* 10kg cabin-baggage toggle on a flight leg */
+.bag-btn {
+  border: 1px solid var(--border); border-radius: 9px; font-size: 12px; font-weight: 700;
+  padding: 0 10px; height: 38px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
+  background: var(--input-bg); color: var(--secondary);
+}
+.bag-btn:active { opacity: .6; }
+.bag-btn.on { background: #cde6ff; color: #0a4a7a; border-color: #0a4a7a; }
+/* On phones, give the 6-char booking code its own full-width row so it is never cut off */
+@media (max-width: 480px) {
+  .leg .ref { flex: 1 1 100%; width: auto; font-size: 17px; letter-spacing: 3px; }
+}
 /* move a leg to another day */
 .move-btn {
   border: none; border-radius: 9px; font-size: 15px; font-weight: 700;
@@ -397,10 +409,6 @@ body {
     </div>
   </div>
   <div class="header-tools">
-    <div class="seg" id="viewSeg">
-      <button data-view="list" class="active">List</button>
-      <button data-view="grid">Grid</button>
-    </div>
     <button id="btnToday">Today</button>
     <button id="btnBulk" title="Bulk edit a date range">📋 Bulk</button>
     <button id="btnCarnet" title="Trenitalia carnet">🎫</button>
@@ -465,7 +473,7 @@ body {
           <label class="switch"><input type="checkbox" id="bulkAddEv"><span class="slider"></span></label>
         </div>
         <div class="evrow" style="margin-bottom:0;">
-          <input class="text-in evtime" id="bulkEvTime" placeholder="hh:mm">
+          <input class="text-in evtime" id="bulkEvTime" inputmode="numeric" maxlength="5" placeholder="hh:mm">
           <input class="text-in evtext" id="bulkEvText" placeholder="Event">
         </div>
       </div>
@@ -517,9 +525,8 @@ body {
 // ============================================================
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 8;
-// Current calendar view: 'list' (agenda) or 'grid' (month grid). Persisted per device.
-let viewMode = 'list';
-try { const v = localStorage.getItem('travelCalendarView'); if (v === 'grid' || v === 'list') viewMode = v; } catch (e) {}
+// Only the month grid view remains (the old agenda/list view was dropped).
+let viewMode = 'grid';
 
 // Known locations (quick-pick chips in the editor). Free text always allowed.
 const KNOWN_LOCS = ['Torino','Milano','Roma','Palermo','Olbia','Madrid','Eraclea','Marsala','Favignana'];
@@ -800,12 +807,13 @@ const SEED = `
 // ============================================================
 // DATA MODEL
 // A day object: { loc, milano:bool, marta:bool,
-//   travel:[{mode:'f'|'t', from, to, time, co, ref, booked:bool}],
+//   travel:[{mode:'f'|'t', from, to, time, co, ref, booked:bool, bag:bool}],
 //   events:[{cat, text}] }  (events and travel are unlimited)
 // ============================================================
 // Events and travel legs are now unlimited (added/removed dynamically in the editor).
 // In the SEED, a booked (already bought) leg is marked with a "!" on the mode,
 // e.g. "f!:FCO-OLB@16:00" = booked flight; "f:FCO-OLB@16:00" = still to buy.
+// A "+" on the mode marks 10kg cabin baggage included on a flight, e.g. "f!+:...".
 // An optional company follows a "#" and an optional booking reference follows a
 // "~" (last token), e.g. "f!:FCO-OLB@16:00#Ryanair~AB12CD". An upcoming FLIGHT
 // (today or later) only shows green when it is booked AND has a valid 6-char
@@ -832,8 +840,12 @@ function parseSeed(text) {
         seg = seg.trim(); if (!seg) return;
         const ci = seg.indexOf(':');
         let mode = seg.slice(0, ci);
-        const booked = mode.endsWith('!');
-        if (booked) mode = mode.slice(0, -1);
+        // trailing markers on the mode token: "!" = booked, "+" = 10kg bag included
+        let booked = false, bag = false;
+        while (mode.endsWith('!') || mode.endsWith('+')) {
+          if (mode.endsWith('!')) booked = true; else bag = true;
+          mode = mode.slice(0, -1);
+        }
         let rest = seg.slice(ci + 1);
         // optional booking reference after a '~' (last token), e.g.
         // "f:FCO-OLB@16:00#Ryanair~AB12CD". 6-char alphanumeric for flights.
@@ -850,7 +862,7 @@ function parseSeed(text) {
         const dash = route.indexOf('-');
         const from = dash >= 0 ? route.slice(0, dash) : route;
         const to = dash >= 0 ? route.slice(dash + 1) : '';
-        travel.push({ mode: mode || 't', from: from.trim(), to: to.trim(), time: time.trim(), co: co.trim(), ref: ref.trim(), booked });
+        travel.push({ mode: mode || 't', from: from.trim(), to: to.trim(), time: time.trim(), co: co.trim(), ref: ref.trim(), booked, bag });
       });
     }
     const events = [];
@@ -907,7 +919,7 @@ function normalizeDay(d) {
     marta: !!d.marta,
     carnetOut: carnetOut,
     carnetBack: carnetBack,
-    travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '', co: t.co || '', ref: t.ref || '', booked: !!t.booked })) : [],
+    travel: Array.isArray(d.travel) ? d.travel.map(t => ({ mode: t.mode || 't', from: t.from || '', to: t.to || '', time: t.time || '', co: t.co || '', ref: t.ref || '', booked: !!t.booked, bag: !!t.bag })) : [],
     events: Array.isArray(d.events) ? d.events.map(e => ({ cat: e.cat || '', text: e.text || '', time: e.time || '' })) : []
   };
 }
@@ -1078,89 +1090,14 @@ function legConfirmed(t, dayKey) {
   }
   return true;
 }
-function travelChip(t, dayKey) {
-  const icon = t.mode === 'f' ? '✈️' : '🚆';
-  const route = [t.from, t.to].filter(Boolean).join(' → ');
-  const time = t.time ? ' · ' + t.time : '';
-  const co = t.co ? ' · ' + t.co : '';
-  const confirmed = legConfirmed(t, dayKey);
-  const cls = confirmed ? 'booked' : 'unbooked';
-  // flights flagged green only with a valid booking ref; show it / flag if missing
-  const isPast = dayKey && dayKey < todayKey();
-  const refTxt = t.mode === 'f'
-    ? (validRef(t.ref) ? ' · ' + t.ref.trim().toUpperCase() : (t.booked && !isPast ? ' · no ref' : ''))
-    : '';
-  const mark = confirmed ? ' ✓' : ' ✗';
-  return `<span class="chip travel ${cls}"><span class="ctxt">${icon} ${esc(route)}${esc(time)}${esc(co)}${esc(refTxt)}${mark}</span></span>`;
-}
-function eventChip(e) {
-  const c = eventColor();
-  const time = e.time ? esc(e.time) + ' · ' : '';
-  return `<span class="chip" style="background:${c.bg};color:${c.fg};"><span class="ctxt">${time}${esc(e.text)}</span></span>`;
-}
 
 function renderMonth() {
   document.getElementById('monthLabel').textContent = `${MONTHS[viewMonth]} ${viewYear}`;
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const tk = todayKey();
-  if (viewMode === 'grid') renderGrid(daysInMonth, tk);
-  else renderList(daysInMonth, tk);
+  renderGrid(daysInMonth, tk);
   renderSummary(daysInMonth);
   renderCarnetCard();
-}
-
-function renderList(daysInMonth, tk) {
-  const cal = document.getElementById('calendar');
-  cal.className = '';
-  let html = '';
-  for (let d = 1; d <= daysInMonth; d++) {
-    const key = ymd(viewYear, viewMonth, d);
-    const dy = DATA[key] || normalizeDay({});
-    const dow = dowOf(key);
-    const weekend = (dow === 0 || dow === 6);
-    const classes = ['day'];
-    if (weekend) classes.push('weekend');
-    if (key === tk) classes.push('today');
-
-    const hol = holidayName(key);
-    if (hol) classes.push('holiday');
-
-    let top = '';
-    if (dy.loc) { const dc = dayColor(dy); top += `<span class="loc-badge" style="background:${dc.bg};color:${dc.fg};">${esc(dy.loc)}</span>`; }
-    if (hol) top += `<span class="holiday-badge">🇮🇹 ${esc(hol)}</span>`;
-    if (dy.carnetOut || dy.carnetBack) {
-      if (dy.carnetOut && dy.carnetBack) {
-        top += `<span class="carnet-flag" title="Trenitalia carnet ticket (outbound)">🎫 →MI</span><span class="carnet-flag" title="Trenitalia carnet ticket (return)">🎫 ← MI</span>`;
-      } else {
-        const lbl = dy.carnetOut ? '🎫 →MI' : '🎫 ← MI';
-        top += `<span class="carnet-flag" title="Trenitalia carnet ticket">${lbl}</span>`;
-      }
-    }
-
-    let chips = '';
-    (dy.travel || []).forEach(t => { if (t.from || t.to || t.time) chips += travelChip(t, key); });
-    (dy.events || []).forEach(e => { if (e.text) chips += eventChip(e); });
-
-    let body;
-    if (!top && !chips) {
-      body = `<div class="day-empty">tap to add</div>`;
-    } else {
-      body = (top ? `<div class="day-topline">${top}</div>` : '') +
-             (chips ? `<div class="chips">${chips}</div>` : '');
-    }
-
-    const martaDot = dy.marta ? `<span class="marta-dot" title="Marta here"></span>` : '';
-
-    html += `<div class="${classes.join(' ')}" data-key="${key}">
-      <div class="day-date"><span class="dow">${DOW[dow]}</span><span class="dnum">${d}</span></div>
-      <div class="day-body">${body}</div>
-      ${martaDot}
-    </div>`;
-  }
-  cal.innerHTML = html;
-  cal.querySelectorAll('.day').forEach(el => {
-    el.addEventListener('click', () => openDayEditor(el.dataset.key));
-  });
 }
 
 function renderGrid(daysInMonth, tk) {
@@ -1186,7 +1123,7 @@ function renderGrid(daysInMonth, tk) {
     if (weekend && !dy.loc) classes.push('wknd');
 
     let dots = '';
-    (dy.travel || []).forEach(t => { if (t.from || t.to) dots += `<span class="gtrav ${legConfirmed(t, key) ? 'bk' : 'nb'}">${t.mode === 'f' ? '✈️' : '🚆'}</span>`; });
+    (dy.travel || []).forEach(t => { if (t.from || t.to) dots += `<span class="gtrav ${legConfirmed(t, key) ? 'bk' : 'nb'}">${t.mode === 'f' ? '✈️' : '🚆'}${t.mode === 'f' && t.bag ? '🧳' : ''}</span>`; });
     (dy.events || []).forEach(e => { if (e.text) dots += `<span class="gdot" style="background:${eventDotColor()}"></span>`; });
 
     const carnetN = (dy.carnetOut ? 1 : 0) + (dy.carnetBack ? 1 : 0);
@@ -1276,14 +1213,16 @@ function legRowHtml(t) {
   t = t || { mode: 't', from: '', to: '', time: '', co: '', ref: '', booked: false };
   const booked = !!t.booked;
   const isFlight = t.mode === 'f';
+  const bag = !!t.bag;
   return `<div class="leg">
       <select class="mode" data-f="mode">${modeOptions(t.mode)}</select>
       <input class="text-in from" data-f="from" placeholder="From" value="${esc(t.from)}">
       <input class="text-in to" data-f="to" placeholder="To" value="${esc(t.to)}">
-      <input class="text-in time" data-f="time" placeholder="hh:mm" value="${esc(t.time)}">
+      <input class="text-in time" data-f="time" inputmode="numeric" maxlength="5" placeholder="hh:mm" value="${esc(t.time)}">
       <input class="text-in co" data-f="co" placeholder="Airline / train co." value="${esc(t.co || '')}">
       <input class="text-in ref" data-f="ref" placeholder="Ref (6)" maxlength="6" value="${esc(t.ref || '')}" style="${isFlight ? '' : 'display:none'}" title="Flight booking reference (6-char alphanumeric)">
       <button type="button" class="book-btn ${booked ? 'booked' : 'unbooked'}" data-f="booked" data-booked="${booked ? '1' : '0'}">${booked ? '✓ Booked' : '✗ To buy'}</button>
+      <button type="button" class="bag-btn ${bag ? 'on' : ''}" data-f="bag" data-bag="${bag ? '1' : '0'}" style="${isFlight ? '' : 'display:none'}" title="10kg cabin baggage included?">${bag ? '🧳 10kg ✓' : '🧳 10kg ✗'}</button>
       <button type="button" class="move-btn" title="Move to another day">📅</button>
       <input type="date" class="move-date" style="display:none" aria-label="Move to date">
       <button type="button" class="row-del" title="Remove">&times;</button>
@@ -1293,12 +1232,13 @@ function legRowHtml(t) {
 function readLegRow(row) {
   const get = f => { const el = row.querySelector(`[data-f="${f}"]`); return el ? el.value.trim() : ''; };
   const bookEl = row.querySelector('.book-btn');
-  return { mode: get('mode') || 't', from: get('from'), to: get('to'), time: get('time'), co: get('co'), ref: get('ref'), booked: bookEl ? bookEl.dataset.booked === '1' : false };
+  const bagEl = row.querySelector('.bag-btn');
+  return { mode: get('mode') || 't', from: get('from'), to: get('to'), time: get('time'), co: get('co'), ref: get('ref'), booked: bookEl ? bookEl.dataset.booked === '1' : false, bag: bagEl ? bagEl.dataset.bag === '1' : false };
 }
 function evRowHtml(e) {
   e = e || { cat: '', text: '', time: '' };
   return `<div class="evrow">
-      <input class="text-in evtime" data-f="time" placeholder="hh:mm" value="${esc(e.time || '')}">
+      <input class="text-in evtime" data-f="time" inputmode="numeric" maxlength="5" placeholder="hh:mm" value="${esc(e.time || '')}">
       <input class="text-in evtext" data-f="text" placeholder="Appointment / event" value="${esc(e.text)}">
       <button type="button" class="move-btn" title="Move to another day">📅</button>
       <input type="date" class="move-date" style="display:none" aria-label="Move to date">
@@ -1751,12 +1691,6 @@ function gotoToday() {
   viewYear = t.getFullYear(); viewMonth = t.getMonth();
   renderMonth();
 }
-function setViewMode(mode) {
-  viewMode = (mode === 'grid') ? 'grid' : 'list';
-  try { localStorage.setItem('travelCalendarView', viewMode); } catch (e) {}
-  document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('active', b.dataset.view === viewMode));
-  renderMonth();
-}
 function shiftMonth(delta) {
   viewMonth += delta;
   if (viewMonth < 0) { viewMonth = 11; viewYear--; }
@@ -1888,10 +1822,6 @@ document.getElementById('colorRows').addEventListener('click', e => {
   renderColorRows();
   renderMonth();
 });
-document.getElementById('viewSeg').addEventListener('click', e => {
-  const b = e.target.closest('button[data-view]');
-  if (b) setViewMode(b.dataset.view);
-});
 document.getElementById('dayClear').addEventListener('click', clearDay);
 document.getElementById('daySave').addEventListener('click', saveDayEditor);
 
@@ -1927,6 +1857,14 @@ document.getElementById('dayBody').addEventListener('click', e => {
     book.textContent = on ? '✗ To buy' : '✓ Booked';
     return;
   }
+  const bag = e.target.closest('.bag-btn');
+  if (bag) {
+    const on = bag.dataset.bag === '1';
+    bag.dataset.bag = on ? '0' : '1';
+    bag.classList.toggle('on', !on);
+    bag.textContent = on ? '🧳 10kg ✗' : '🧳 10kg ✓';
+    return;
+  }
   const move = e.target.closest('.move-btn');
   if (move) {
     const di = move.closest('.leg, .evrow').querySelector('.move-date');
@@ -1954,8 +1892,11 @@ document.getElementById('dayBody').addEventListener('change', e => {
   const mode = e.target.closest('.mode');
   if (mode) {
     const row = mode.closest('.leg');
+    const isF = mode.value === 'f';
     const refIn = row && row.querySelector('.ref');
-    if (refIn) refIn.style.display = mode.value === 'f' ? '' : 'none';
+    if (refIn) refIn.style.display = isF ? '' : 'none';
+    const bagIn = row && row.querySelector('.bag-btn');
+    if (bagIn) bagIn.style.display = isF ? '' : 'none';
     return;
   }
 });
@@ -1979,8 +1920,16 @@ document.getElementById('dayBody').addEventListener('change', e => {
   }, { passive: true });
 })();
 
-// reflect persisted view mode in the toggle, then render
-document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('active', b.dataset.view === viewMode));
+// Time fields: type digits only, the ":" is inserted automatically (e.g. 1935 -> 19:35).
+function formatTimeField(el) {
+  const digits = el.value.replace(/[^0-9]/g, '').slice(0, 4);
+  el.value = digits.length >= 3 ? digits.slice(0, 2) + ':' + digits.slice(2) : digits;
+}
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el && el.classList && (el.classList.contains('time') || el.classList.contains('evtime'))) formatTimeField(el);
+});
+
 renderMonth();
 </script>
 
