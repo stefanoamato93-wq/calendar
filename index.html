@@ -1312,6 +1312,8 @@ function locChipsHtml(selected) {
   }).join('');
 }
 
+let dayEditorSnapshot = null;   // baseline for click-away dirty-detection
+
 function openDayEditor(key) {
   editingKey = key;
   const dy = cloneDay(DATA[key] || normalizeDay({}));
@@ -1445,7 +1447,14 @@ function clearDay() {
   renderMonth();
   toast('Day cleared');
 }
-function closeDayModal() { document.getElementById('dayModal').classList.add('hidden'); editingKey = null; }
+function closeDayModal() { document.getElementById('dayModal').classList.add('hidden'); editingKey = null; dayEditorSnapshot = null; }
+
+function dayEditorDirty() {
+  if (dayEditorSnapshot === null) return false;
+  try { return JSON.stringify(collectDayFromEditor()) !== dayEditorSnapshot; } catch (e) { return false; }
+}
+// Tapping the backdrop must never silently drop edits: auto-save if anything changed.
+function dismissDayModal() { if (dayEditorDirty()) saveDayEditor(); else closeDayModal(); }
 
 // Move a single flight/train leg to another day. Reads the leg from its editor
 // row, appends it to the target day, commits the current (source) day without
@@ -2036,7 +2045,7 @@ document.getElementById('bulkLocChips').addEventListener('click', e => {
 });
 
 // close bottom sheets when tapping the dim backdrop
-document.getElementById('dayModal').addEventListener('click', e => { if (e.target.id === 'dayModal') closeDayModal(); });
+document.getElementById('dayModal').addEventListener('click', e => { if (e.target.id === 'dayModal') dismissDayModal(); });
 document.getElementById('bulkModal').addEventListener('click', e => { if (e.target.id === 'bulkModal') closeBulk(); });
 document.getElementById('colorsModal').addEventListener('click', e => { if (e.target.id === 'colorsModal') closeColors(); });
 
