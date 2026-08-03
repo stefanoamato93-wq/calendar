@@ -398,7 +398,18 @@ body {
 
 /* search */
 .search-bar { position: sticky; top: 0; background: var(--bg); padding-bottom: 10px; margin-bottom: 4px; z-index: 1; }
-.search-bar .text-in { font-size: 17px; }
+.search-bar .text-in { font-size: 17px; padding-right: 40px; }
+.search-input-wrap { position: relative; }
+/* hide the browser's native search "x" so we only show our own */
+#searchInput::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.search-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: var(--input-bg); color: var(--secondary); font-size: 18px; line-height: 1;
+  cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0;
+}
+.search-clear:active { background: var(--border); }
+.search-clear.show { display: flex; }
 .sr-item {
   display: flex; gap: 10px; align-items: stretch; background: var(--card);
   border-radius: var(--radius); padding: 10px 12px; margin-bottom: 6px;
@@ -518,8 +529,11 @@ body {
     </div>
     <div class="modal-body" id="searchBody">
       <div class="search-bar">
-        <input class="text-in" id="searchInput" type="search" autocomplete="off"
-               placeholder="City, flight, train, event, name…">
+        <div class="search-input-wrap">
+          <input class="text-in" id="searchInput" type="search" autocomplete="off"
+                 placeholder="City, flight, train, event, name…">
+          <button type="button" class="search-clear" id="searchClear" title="Clear" aria-label="Clear">×</button>
+        </div>
         <p class="mini-note" style="margin-bottom:0;">Matches location, flights, trains, companies, booking codes, events and names. Space-separated words all have to match.</p>
       </div>
       <div id="searchResults"></div>
@@ -1383,6 +1397,7 @@ function openDayEditor(key) {
   });
 
   document.getElementById('daySaveBtn').addEventListener('click', saveDayEditor);
+  dayEditorSnapshot = JSON.stringify(collectDayFromEditor());   // baseline for dirty-detection
   document.getElementById('dayModal').classList.remove('hidden');
 }
 
@@ -1834,11 +1849,27 @@ function highlightRegex(tokens) {
 }
 function hl(txt, rx) { const e = esc(txt); return rx ? e.replace(rx, '<mark>$1</mark>') : e; }
 
+function toggleSearchClear() {
+  const has = !!document.getElementById('searchInput').value;
+  document.getElementById('searchClear').classList.toggle('show', has);
+}
 function openSearch() {
-  document.getElementById('searchInput').value = '';
+  const input = document.getElementById('searchInput');
+  input.value = '';
   runSearch('');
+  toggleSearchClear();
   document.getElementById('searchModal').classList.remove('hidden');
-  setTimeout(() => { const i = document.getElementById('searchInput'); if (i) i.focus(); }, 60);
+  // focus synchronously (keeps the tap gesture so the mobile keyboard opens),
+  // then once more after the sheet animation settles as a fallback.
+  input.focus();
+  setTimeout(() => input.focus(), 80);
+}
+function clearSearch() {
+  const input = document.getElementById('searchInput');
+  input.value = '';
+  runSearch('');
+  toggleSearchClear();
+  input.focus();
 }
 function closeSearch() { document.getElementById('searchModal').classList.add('hidden'); }
 function openSearchResult(key) {
@@ -1934,7 +1965,8 @@ document.getElementById('colorsClose').addEventListener('click', closeColors);
 document.getElementById('btnSearch').addEventListener('click', openSearch);
 document.getElementById('searchClose').addEventListener('click', closeSearch);
 document.getElementById('searchModal').addEventListener('click', e => { if (e.target.id === 'searchModal') closeSearch(); });
-document.getElementById('searchInput').addEventListener('input', e => runSearch(e.target.value.trim()));
+document.getElementById('searchInput').addEventListener('input', e => { runSearch(e.target.value.trim()); toggleSearchClear(); });
+document.getElementById('searchClear').addEventListener('click', clearSearch);
 document.getElementById('searchInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') { const first = document.querySelector('#searchResults .sr-item'); if (first) openSearchResult(first.dataset.key); }
   if (e.key === 'Escape') closeSearch();
