@@ -395,6 +395,31 @@ body {
 .carnet-row-sub { font-size: 12px; color: var(--secondary); margin-top: 2px; }
 .carnet-tag { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; background: var(--primary); color: #fff; padding: 1px 7px; border-radius: 9px; margin-left: 4px; vertical-align: middle; }
 .carnet-del { width: 30px; height: 34px; font-size: 17px; }
+
+/* search */
+.search-bar { position: sticky; top: 0; background: var(--bg); padding-bottom: 10px; margin-bottom: 4px; z-index: 1; }
+.search-bar .text-in { font-size: 17px; }
+.sr-item {
+  display: flex; gap: 10px; align-items: stretch; background: var(--card);
+  border-radius: var(--radius); padding: 10px 12px; margin-bottom: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04); cursor: pointer;
+}
+.sr-item:active { background: #fafafa; }
+.sr-date {
+  flex-shrink: 0; width: 50px; text-align: center; display: flex; flex-direction: column;
+  justify-content: center; border-right: 0.5px solid var(--border); padding-right: 8px;
+}
+.sr-date .sr-dnum { font-size: 21px; font-weight: 700; line-height: 1; }
+.sr-date .sr-mon { font-size: 10px; font-weight: 700; color: var(--secondary); text-transform: uppercase; margin-top: 1px; }
+.sr-date .sr-dow { font-size: 10px; color: var(--secondary); }
+.sr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sr-loc { font-size: 14px; font-weight: 700; }
+.sr-loc .sr-tag { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 9px; margin-left: 6px; background: var(--input-bg); color: var(--secondary); vertical-align: middle; }
+.sr-line { font-size: 12.5px; color: var(--text); line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr-line.muted { color: var(--secondary); }
+.sr-line mark { background: #ffe98a; color: inherit; border-radius: 3px; padding: 0 1px; }
+.sr-empty { text-align: center; color: var(--secondary); font-size: 13.5px; padding: 30px 10px; }
+.sr-count { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--secondary); margin: 2px 2px 8px; }
 </style>
 </head>
 <body>
@@ -410,6 +435,7 @@ body {
   </div>
   <div class="header-tools">
     <button id="btnToday">Today</button>
+    <button id="btnSearch" title="Search events, flights, trains">🔍</button>
     <button id="btnBulk" title="Bulk edit a date range">📋 Bulk</button>
     <button id="btnCarnet" title="Trenitalia carnet">🎫</button>
     <button id="btnColors" title="Edit colours">🎨</button>
@@ -479,6 +505,24 @@ body {
       </div>
       <button class="btn btn-primary" id="bulkApply">Apply to range</button>
       <p class="mini-note">Applies to every day from the first to the last date, inclusive. Leave an option on "No change" to skip it. Changes sync to all devices.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SEARCH -->
+<div class="modal-overlay hidden" id="searchModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="m-title">🔍 Search</span>
+      <button id="searchClose">Done</button>
+    </div>
+    <div class="modal-body" id="searchBody">
+      <div class="search-bar">
+        <input class="text-in" id="searchInput" type="search" autocomplete="off"
+               placeholder="City, flight, train, event, name…">
+        <p class="mini-note" style="margin-bottom:0;">Matches location, flights, trains, companies, booking codes, events and names. Space-separated words all have to match.</p>
+      </div>
+      <div id="searchResults"></div>
     </div>
   </div>
 </div>
@@ -1699,6 +1743,113 @@ function shiftMonth(delta) {
 }
 
 // ============================================================
+// SEARCH (rare use; keyword match across location, travel and events)
+// ============================================================
+function catLabel(cat) { const c = EVENT_CATS.find(x => x.key === cat); return c ? c.label.replace(/^— | —$/g, '') : ''; }
+
+// Build the display lines + the lowercased haystack for one day.
+function daySearchDoc(key, dy) {
+  const [y, m, d] = key.split('-').map(Number);
+  const dow = DOW[dowOf(key)];
+  const lines = [];       // shown under the result
+  const hay = [];         // extra searchable tokens not necessarily shown
+
+  hay.push(key, `${d} ${MONTHS[m - 1]} ${y}`, MONTHS[m - 1], dow);
+  if (dy.loc) hay.push(dy.loc);
+
+  const hol = holidayName(key);
+  if (hol) { lines.push({ txt: '🇮🇹 ' + hol, muted: true }); hay.push(hol, 'holiday', 'festivo'); }
+
+  (dy.travel || []).forEach(t => {
+    if (!(t.from || t.to || t.co || t.ref)) return;
+    const isF = t.mode === 'f';
+    const icon = isF ? '✈️' : '🚆';
+    const route = [t.from, t.to].filter(Boolean).join(' → ');
+    const bits = [route, t.time, t.co, t.ref].filter(Boolean).join('  ');
+    lines.push({ txt: `${icon} ${bits}${t.booked ? '  ✓' : ''}`.trim() });
+    hay.push(t.from, t.to, t.time, t.co, t.ref,
+      isF ? 'flight volo aereo fly' : 'train treno rail',
+      t.booked ? 'booked' : 'to buy unbooked');
+    if (isF && t.bag) hay.push('bag bagaglio cabin 10kg');
+  });
+
+  (dy.events || []).forEach(e => {
+    if (!e.text) return;
+    const lbl = catLabel(e.cat);
+    lines.push({ txt: `${lbl ? lbl + ': ' : ''}${e.text}${e.time ? '  ' + e.time : ''}` });
+    hay.push(e.text, lbl, e.cat, e.time);
+  });
+
+  if (dy.marta) { hay.push('marta'); }
+  if (dy.milano) { hay.push('milano commute carnet'); }
+
+  const haystack = (hay.join(' ') + ' ' + lines.map(l => l.txt).join(' ')).toLowerCase();
+  return { key, y, m, d, dow, loc: dy.loc, marta: dy.marta, milano: dy.milano, lines, haystack };
+}
+
+function runSearch(q) {
+  const box = document.getElementById('searchResults');
+  const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    box.innerHTML = '<div class="sr-empty">Type to search across every day: a city, a route (e.g. <b>FCO OLB</b>), a company, a booking code, an event or a name.</div>';
+    return;
+  }
+  const hits = [];
+  Object.keys(DATA).sort().forEach(key => {
+    const dy = DATA[key];
+    if (!dy || isEmptyDay(dy)) return;
+    const doc = daySearchDoc(key, dy);
+    if (tokens.every(tok => doc.haystack.includes(tok))) hits.push(doc);
+  });
+  if (!hits.length) {
+    box.innerHTML = `<div class="sr-empty">No matches for “${esc(q)}”.</div>`;
+    return;
+  }
+  const rx = highlightRegex(tokens);
+  const rows = hits.map(doc => {
+    const tags = [];
+    if (doc.marta) tags.push('<span class="sr-tag">Marta</span>');
+    if (doc.milano) tags.push('<span class="sr-tag">Milano</span>');
+    const lines = doc.lines.length
+      ? doc.lines.map(l => `<div class="sr-line${l.muted ? ' muted' : ''}">${hl(l.txt, rx)}</div>`).join('')
+      : '<div class="sr-line muted">—</div>';
+    return `<div class="sr-item" data-key="${doc.key}">
+      <div class="sr-date">
+        <span class="sr-dnum">${doc.d}</span>
+        <span class="sr-mon">${MONTHS[doc.m - 1].slice(0, 3)} '${String(doc.y).slice(2)}</span>
+        <span class="sr-dow">${doc.dow}</span>
+      </div>
+      <div class="sr-main">
+        <div class="sr-loc">${hl(doc.loc || '—', rx)}${tags.join('')}</div>
+        ${lines}
+      </div>
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div class="sr-count">${hits.length} day${hits.length > 1 ? 's' : ''}</div>` + rows;
+}
+
+function highlightRegex(tokens) {
+  const safe = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).filter(Boolean);
+  return safe.length ? new RegExp('(' + safe.join('|') + ')', 'gi') : null;
+}
+function hl(txt, rx) { const e = esc(txt); return rx ? e.replace(rx, '<mark>$1</mark>') : e; }
+
+function openSearch() {
+  document.getElementById('searchInput').value = '';
+  runSearch('');
+  document.getElementById('searchModal').classList.remove('hidden');
+  setTimeout(() => { const i = document.getElementById('searchInput'); if (i) i.focus(); }, 60);
+}
+function closeSearch() { document.getElementById('searchModal').classList.add('hidden'); }
+function openSearchResult(key) {
+  closeSearch();
+  const [y, m] = key.split('-').map(Number);
+  viewYear = y; viewMonth = m - 1;
+  renderMonth();
+  openDayEditor(key);
+}
+
+// ============================================================
 // CLOUD SYNC GLUE
 // The Firebase transport lives in the <script type="module"> at the end and
 // exposes window.fb. These classic-scope helpers hold the app logic and are
@@ -1780,6 +1931,17 @@ document.getElementById('btnToday').addEventListener('click', gotoToday);
 document.getElementById('btnBulk').addEventListener('click', openBulk);
 document.getElementById('btnColors').addEventListener('click', openColors);
 document.getElementById('colorsClose').addEventListener('click', closeColors);
+document.getElementById('btnSearch').addEventListener('click', openSearch);
+document.getElementById('searchClose').addEventListener('click', closeSearch);
+document.getElementById('searchModal').addEventListener('click', e => { if (e.target.id === 'searchModal') closeSearch(); });
+document.getElementById('searchInput').addEventListener('input', e => runSearch(e.target.value.trim()));
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { const first = document.querySelector('#searchResults .sr-item'); if (first) openSearchResult(first.dataset.key); }
+  if (e.key === 'Escape') closeSearch();
+});
+document.getElementById('searchResults').addEventListener('click', e => {
+  const item = e.target.closest('.sr-item'); if (item) openSearchResult(item.dataset.key);
+});
 document.getElementById('btnCarnet').addEventListener('click', openCarnet);
 document.getElementById('carnetClose').addEventListener('click', closeCarnet);
 document.getElementById('carnetCard').addEventListener('click', openCarnet);
