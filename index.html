@@ -431,6 +431,14 @@ body {
 .sr-line mark { background: #ffe98a; color: inherit; border-radius: 3px; padding: 0 1px; }
 .sr-empty { text-align: center; color: var(--secondary); font-size: 13.5px; padding: 30px 10px; }
 .sr-count { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--secondary); margin: 2px 2px 8px; }
+
+/* unsaved-changes prompt (centered dialog) */
+#confirmModal { align-items: center; z-index: 4000; }
+.confirm-box { background: var(--card); width: 86%; max-width: 330px; border-radius: 16px; padding: 20px 16px 16px; text-align: center; }
+.confirm-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.confirm-msg { font-size: 13.5px; color: var(--secondary); margin-bottom: 16px; }
+.confirm-box .btn { margin-top: 8px; }
+.confirm-box .btn:first-of-type { margin-top: 0; }
 </style>
 </head>
 <body>
@@ -565,6 +573,17 @@ body {
       <button id="carnetClose">Done</button>
     </div>
     <div class="modal-body" id="carnetBody"></div>
+  </div>
+</div>
+
+<!-- UNSAVED-CHANGES PROMPT -->
+<div class="modal-overlay hidden" id="confirmModal">
+  <div class="confirm-box">
+    <div class="confirm-title">Unsaved changes</div>
+    <div class="confirm-msg">Save your changes before closing?</div>
+    <button class="btn btn-primary" id="confirmSave">Save</button>
+    <button class="btn btn-secondary" id="confirmKeep">Keep editing</button>
+    <button class="btn btn-danger-ghost" id="confirmDiscard">Discard changes</button>
   </div>
 </div>
 
@@ -1453,8 +1472,21 @@ function dayEditorDirty() {
   if (dayEditorSnapshot === null) return false;
   try { return JSON.stringify(collectDayFromEditor()) !== dayEditorSnapshot; } catch (e) { return false; }
 }
-// Tapping the backdrop must never silently drop edits: auto-save if anything changed.
-function dismissDayModal() { if (dayEditorDirty()) saveDayEditor(); else closeDayModal(); }
+// Tapping the backdrop must never silently drop edits: if anything changed, ask
+// whether to save, discard, or keep editing.
+function dismissDayModal() {
+  if (!dayEditorDirty()) { closeDayModal(); return; }
+  askDiscard(saveDayEditor, closeDayModal);
+}
+
+// Shared unsaved-changes prompt. onSave / onDiscard are run on the matching choice;
+// "Keep editing" just dismisses the prompt and leaves the editor open.
+let confirmActions = null;
+function askDiscard(onSave, onDiscard) {
+  confirmActions = { save: onSave, discard: onDiscard };
+  document.getElementById('confirmModal').classList.remove('hidden');
+}
+function hideConfirm() { document.getElementById('confirmModal').classList.add('hidden'); confirmActions = null; }
 
 // Move a single flight/train leg to another day. Reads the leg from its editor
 // row, appends it to the target day, commits the current (source) day without
@@ -1976,6 +2008,10 @@ document.getElementById('searchClose').addEventListener('click', closeSearch);
 document.getElementById('searchModal').addEventListener('click', e => { if (e.target.id === 'searchModal') closeSearch(); });
 document.getElementById('searchInput').addEventListener('input', e => { runSearch(e.target.value.trim()); toggleSearchClear(); });
 document.getElementById('searchClear').addEventListener('click', clearSearch);
+document.getElementById('confirmSave').addEventListener('click', () => { const a = confirmActions; hideConfirm(); if (a && a.save) a.save(); });
+document.getElementById('confirmDiscard').addEventListener('click', () => { const a = confirmActions; hideConfirm(); if (a && a.discard) a.discard(); });
+document.getElementById('confirmKeep').addEventListener('click', hideConfirm);
+document.getElementById('confirmModal').addEventListener('click', e => { if (e.target.id === 'confirmModal') hideConfirm(); });
 document.getElementById('searchInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') { const first = document.querySelector('#searchResults .sr-item'); if (first) openSearchResult(first.dataset.key); }
   if (e.key === 'Escape') closeSearch();
