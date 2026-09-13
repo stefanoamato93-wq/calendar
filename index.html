@@ -497,10 +497,10 @@ body {
         </div>
       </div>
       <div class="fieldcard">
-        <div class="field-label">Marta here</div>
+        <div class="field-label">Marta</div>
         <select class="text-in" id="bulkMarta">
           <option value="">No change</option>
-          <option value="on">Set Marta here</option>
+          <option value="on">Set Marta</option>
           <option value="off">Remove Marta</option>
         </select>
       </div>
@@ -1205,7 +1205,7 @@ function renderGrid(daysInMonth, tk) {
 
     const carnetN = (dy.carnetOut ? 1 : 0) + (dy.carnetBack ? 1 : 0);
     const flags = carnetN ? '🎫'.repeat(carnetN) : '';
-    const martaDot = dy.marta ? `<span class="marta-dot" title="Marta here"></span>` : '';
+    const martaDot = dy.marta ? `<span class="marta-dot" title="Marta"></span>` : '';
 
     const dc = dayColor(dy);
     const style = dc ? `background:${dc.bg};color:${dc.fg};` : '';
@@ -1232,10 +1232,12 @@ function renderGrid(daysInMonth, tk) {
 function renderSummary(daysInMonth) {
   const counts = {};
   let milanoDays = 0;
+  let martaDays = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const key = ymd(viewYear, viewMonth, d);
     const dy = DATA[key]; if (!dy) continue;
     if (dy.milano) milanoDays++;
+    if (dy.marta) martaDays++;
     if (!dy.loc) continue;
     counts[dy.loc] = (counts[dy.loc] || 0) + 1;
   }
@@ -1252,6 +1254,9 @@ function renderSummary(daysInMonth) {
   if (milanoDays) {
     const mc = commuteColor();
     html += `<span class="tally" style="background:${mc.bg};color:${mc.fg};" title="Days working in Milano (carnet days)"><span class="t-name">🎫 Milano</span><span class="t-count" style="color:inherit;">${milanoDays}</span></span>`;
+  }
+  if (martaDays) {
+    html += `<span class="tally" title="Days with Marta"><span class="t-name">Marta</span><span class="t-count" style="color:inherit;">${martaDays}</span></span>`;
   }
   html += `</div>`;
   document.getElementById('summaryCard').innerHTML = html;
@@ -1356,7 +1361,7 @@ function openDayEditor(key) {
     </div>
     <div class="fieldcard">
       <div class="toggle-row">
-        <div><div class="tl-label">Marta here</div><div class="tl-sub">Marta is with me</div></div>
+        <div><div class="tl-label">Marta</div><div class="tl-sub">Marta is with me</div></div>
         <label class="switch"><input type="checkbox" id="edMarta" ${dy.marta ? 'checked' : ''}><span class="slider"></span></label>
       </div>
     </div>
@@ -1564,7 +1569,12 @@ function openBulk() {
   renderBulkChips('');
   document.getElementById('bulkModal').classList.remove('hidden');
 }
-function closeBulk() { document.getElementById('bulkModal').classList.add('hidden'); }
+function hideBulkModal() { document.getElementById('bulkModal').classList.add('hidden'); }
+function closeBulk() {
+  // "Done" must save any pending changes before closing, same as "Apply to range".
+  applyBulk(false, { silent: true });
+  hideBulkModal();
+}
 
 // inclusive list of YYYY-MM-DD keys from a to b
 function dateRangeKeys(a, b) {
@@ -1576,10 +1586,11 @@ function dateRangeKeys(a, b) {
   return keys;
 }
 
-function applyBulk(clearMode) {
+function applyBulk(clearMode, opts) {
+  const silent = !!(opts && opts.silent);
   let a = document.getElementById('bulkFrom').value;
   let b = document.getElementById('bulkTo').value;
-  if (!a || !b) { toast('Pick both dates'); return; }
+  if (!a || !b) { if (!silent) toast('Pick both dates'); return; }
   if (a > b) { const t = a; a = b; b = t; }
   const keys = dateRangeKeys(a, b);
 
@@ -1593,7 +1604,8 @@ function applyBulk(clearMode) {
     const addEv = document.getElementById('bulkAddEv').checked;
     const evText = document.getElementById('bulkEvText').value.trim();
     const evTime = document.getElementById('bulkEvTime').value.trim();
-    if (!marta && !setLoc && !(addEv && evText)) { toast('Nothing to apply'); return; }
+    // Silent auto-save on "Done" has nothing to do if no option was changed; skip quietly.
+    if (!marta && !setLoc && !(addEv && evText)) { if (!silent) toast('Nothing to apply'); return; }
     keys.forEach(key => {
       const dy = cloneDay(DATA[key] || normalizeDay({}));
       if (marta) dy.marta = (marta === 'on');
@@ -1605,8 +1617,8 @@ function applyBulk(clearMode) {
   saveData();
   if (window.fb && window.fb.ready) window.fb.setDays(collectOverrides());
   renderMonth();
-  closeBulk();
-  toast(`Updated ${keys.length} day${keys.length === 1 ? '' : 's'}`);
+  hideBulkModal();
+  if (!silent) toast(`Updated ${keys.length} day${keys.length === 1 ? '' : 's'}`);
 }
 
 // ============================================================

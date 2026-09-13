@@ -25,12 +25,12 @@ The app ships its own icon (an inline SVG calendar), wired up at runtime as the 
   - **Flights / Trains** — add as many legs as you need (`+ Add flight / train`); each row has mode (train/flight), From, To, time, the **airline / train company** (free text, e.g. Trenitalia, Ryanair), a **booking reference** (flights only, a 6-char alphanumeric code, e.g. a PNR), a **booked toggle** (green ✓ Booked = already bought / red ✗ To buy = still to purchase), and a × to remove it. The company shows on the day's travel chip. An **upcoming flight** (today or later) only shows green when it is booked **and** has a valid 6-char reference; one that is missing the reference (every existing flight starts without one) is shown with the same **red** "to buy" colour coding until you add the code. **Past flights keep the simple rule** (booked = green, no reference required), so flights you have already taken are not flagged red. Trains ignore the reference.
   - **Trenitalia carnet** — two toggles per day: **Carnet to Milano** (use a carnet ticket outbound) and **Carnet return** (use one for the trip back). A day using the carnet shows a 🎫 flag (`→MI`, `← MI`, or `↔` for both) in List and a 🎫 in Grid. Each toggled trip counts as one ticket against the current carnet (see Carnet below).
   - **Events** — add as many as you need (`+ Add event`), each with a text and a category colour (Work, Social, Appointment, Leave requested, Leave to request); × removes a row.
-  - **Working in Milano** / **Marta here** — toggles.
+  - **Working in Milano** / **Marta** — toggles.
   - **Where will I be** — type a location or tap a quick city chip. Add new cities with the "Add a city" box; tap × on a chip to delete that city from the list.
   - **Save day**, or **Clear** (top-left) to empty the day.
 - **Move a flight / train to another day**: in the day editor, every flight/train row has a **📅 Move** button. Tap it, pick the target date, and that leg jumps to the chosen day (it's removed from the current day and the current day is committed at the same time). Both days sync immediately.
-- **Bulk edit** (📋 **Bulk** in the header): apply the same change across a date range in one go. Pick a **from** and **to** date (defaults to the visible month), then set any of: **Marta here** (set / remove / no change), **Working in Milano** (set / remove / no change), **Set location** (overwrite the location on every day in range, with city quick-chips), and **Add an event** (append the same event + category to every day). Tap **Apply to range**. **Clear range** (top-left of the sheet) empties every day in the range (asks for confirmation first). Anything left on "No change" / unchecked is skipped. All changes sync to every device.
-- **Monthly summary** (compact card pinned to the **bottom**) auto-counts days per location only (no Marta split, no Milano/Marta tallies).
+- **Bulk edit** (📋 **Bulk** in the header): apply the same change across a date range in one go. Pick a **from** and **to** date (defaults to the visible month), then set any of: **Marta** (set / remove / no change), **Working in Milano** (set / remove / no change), **Set location** (overwrite the location on every day in range, with city quick-chips), and **Add an event** (append the same event + category to every day). Tap **Apply to range**, or **Done** (top-right of the sheet), which also saves any pending changes before closing (previously **Done** discarded them, only **Apply to range** saved — fixed). **Clear range** (top-left of the sheet) empties every day in the range (asks for confirmation first). Anything left on "No change" / unchecked is skipped. All changes sync to every device.
+- **Monthly summary** (compact card pinned to the **bottom**) auto-counts days per location, plus a **Marta** days counter and a **🎫 Milano** (carnet) days counter when either is non-zero.
 
 ## Trenitalia carnet
 
@@ -120,10 +120,24 @@ scripts share one global lexical scope; the module talks to them only through
   - **Booked/unbooked** colours strengthened (solid green `#1ea84a` / red
     `#ff2d20`, white text) in chips, grid pills, and the editor toggle.
   - **Summary** moved to the bottom, made compact (`.summary-card.compact`), and
-    now counts **cities only** (no Marta split, no Milano/Marta tallies).
+    counts cities plus a **Marta** days tally and a **🎫 Milano** (carnet) days
+    tally (shown only when non-zero).
   - **Swipe left/right** on `.container` changes month (left = next).
   - **Backup/Sync fully removed** (DB is the source of truth); the Tools modal and
     its functions are deleted from the file (see latest-session notes above).
+  - **Latest session (Marta label + counter + bulk-save fix):**
+    - Renamed the "Marta here" label to **Marta** everywhere it appeared (day
+      editor toggle, bulk-edit select + its options, and the grid Marta-dot
+      tooltip). The `marta` data field and Firebase key are unchanged.
+    - Added a **Marta days** counter to the bottom summary card (`renderSummary`),
+      alongside the existing per-location tallies and the 🎫 Milano counter.
+      Shown only when the count for the month is non-zero.
+    - **Fixed a bug**: tapping **Done** in the Bulk edit sheet closed it without
+      saving; only **Apply to range** persisted changes. `closeBulk()` now calls
+      `applyBulk(false, { silent: true })` before hiding the modal, so Done saves
+      silently (no toast/confirm-dialog noise) just like Apply to range does.
+      `applyBulk` now takes an `opts.silent` flag and a shared `hideBulkModal()`
+      helper closes the sheet in both paths.
 - **Cloud sync is live and the database is unblocked.** The RTDB security rules
   were the blocker: only `lists/casa` (the grocery app) was readable/writable, so
   every calendar read/write returned HTTP 401 and nothing synced. The user
@@ -293,10 +307,10 @@ through 2026-12-31** (214 days). Add months by appending lines.
 
 - `renderMonth()` — dispatcher: sets the month label, then calls `renderList()` or `renderGrid()` per `viewMode`, plus `renderSummary()`.
 - `renderList(daysInMonth, tk)` — the agenda day rows (full chips, `(Milano)` under the date, holiday badge, pink Marta dot); `renderGrid(daysInMonth, tk)` — the Mon-first month grid (location-tinted compact cells, `(MI)`, holiday-tinted number, Marta dot). `setViewMode('list'|'grid')` toggles and persists under `travelCalendarView`. Day tint comes from `dayColor(dy)` (commute-aware); event dot colours from `catDot(cat)`.
-- `renderSummary()` — per-location day counts only (no Marta split, no Milano/Marta tallies); shown in the compact card at the bottom.
+- `renderSummary()` — per-location day counts, plus a Marta days tally and a 🎫 Milano (carnet) days tally (each shown only when non-zero); shown in the compact card at the bottom.
 - `openDayEditor(key)` / `collectDayFromEditor()` / `saveDayEditor()` — the bottom-sheet editor. `readLegRow(row)` reads a single flight/train row (shared with the move feature). The legend and per-row event swatches are colour-driven by `evCatColor`.
 - `moveLegToDay(dateInput)` — moves one flight/train leg to the date picked in its row's hidden `.move-date` input (📅 Move button); appends to the target day, removes the source row, commits + syncs both days.
-- `openBulk()` / `applyBulk(clearMode)` / `closeBulk()` — the Bulk edit sheet; `dateRangeKeys(a,b)` builds the inclusive key list; `bulkLocChipsHtml`/`renderBulkChips` render the city quick-chips.
+- `openBulk()` / `applyBulk(clearMode, opts)` / `closeBulk()` / `hideBulkModal()` — the Bulk edit sheet; `closeBulk()` calls `applyBulk(false, { silent: true })` before hiding so **Done** saves pending changes (not just **Apply to range**); `dateRangeKeys(a,b)` builds the inclusive key list; `bulkLocChipsHtml`/`renderBulkChips` render the city quick-chips.
 - `shiftMonth(delta)` — month nav, also called by the swipe handler on `.container`.
 - Colours: `cityColor`/`evCatColor`/`dayColor`/`catDot`/`darken` (see Colour system); `LOC_COLORS`/`DEFAULT_COLORS`/`EV_COLORS_DEFAULT` defaults; `IT_HOLIDAYS`/`holidayName` for holidays.
 
