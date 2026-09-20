@@ -2,6 +2,8 @@
 
 A single-file, mobile-first web app to plan and consult where I'll be each day: location, whether I'm working in Milano, whether Marta is with me, and the flights/trains I'm taking (from, to, time), with as many events per day as needed.
 
+**The location on a day is where I SLEEP that night**, not where I work. Working in Milano is a separate flag (see below), so a day can be "sleep in Torino, worked in Milano".
+
 No backend code and no build step: everything (HTML, CSS, JS, and the seed data) lives in `index.html`. State is synced to a Firebase Realtime Database (the single source of truth) and cached in the browser's `localStorage` for instant load / offline. There is no manual backup/export, the cloud holds everything. To deploy: upload `index.html` to GitHub Pages.
 
 ## App icon
@@ -23,14 +25,15 @@ The app ships its own icon (an inline SVG calendar), wired up at runtime as the 
 - **Each day card** shows: location badge, holiday badge (if any), `(Milano)` under the date when working in Milan, a pink Marta dot top-right, travel chips (✈️/🚆 with from → to and time, strong green = booked / strong red = to buy), and event chips colour-coded by type.
 - **Tap any day** (either view) to open the editor. It is ordered top to bottom: travel, events, flags, then location.
   - **Flights / Trains** — add as many legs as you need (`+ Add flight / train`); each row has mode (train/flight), From, To, time, the **airline / train company** (free text, e.g. Trenitalia, Ryanair), a **booking reference** (flights only, a 6-char alphanumeric code, e.g. a PNR), a **booked toggle** (green ✓ Booked = already bought / red ✗ To buy = still to purchase), and a × to remove it. The company shows on the day's travel chip. An **upcoming flight** (today or later) only shows green when it is booked **and** has a valid 6-char reference; one that is missing the reference (every existing flight starts without one) is shown with the same **red** "to buy" colour coding until you add the code. **Past flights keep the simple rule** (booked = green, no reference required), so flights you have already taken are not flagged red. Trains ignore the reference.
-  - **Trenitalia carnet** — two toggles per day: **Carnet to Milano** (use a carnet ticket outbound) and **Carnet return** (use one for the trip back). A day using the carnet shows a 🎫 flag (`→MI`, `← MI`, or `↔` for both) in List and a 🎫 in Grid. Each toggled trip counts as one ticket against the current carnet (see Carnet below).
+  - **Worked in Milano** — a standalone toggle. Set it on any day I worked in Milano even when no carnet ticket was used (I drove, someone gave me a lift, I bought a single ticket). It tints the day **dark grey** (the "Milano commute" colour) when I slept at home (Torino) or no city is set, shows **MI** in the grid cell, and feeds the **MI Milano** counter in the monthly summary. If the day already uses a carnet ticket the flag is **inferred**: the toggle switches itself on and locks (greyed out), so it can never contradict the carnet.
+  - **Trenitalia carnet** — two toggles per day: **Carnet to Milano** (use a carnet ticket outbound) and **Carnet return** (use one for the trip back). A day using the carnet shows 🎫 per ticket in the grid cell (so `🎫🎫` for out + back). Each toggled trip counts as one ticket against the current carnet (see Carnet below) and implies "worked in Milano".
   - **Events** — add as many as you need (`+ Add event`), each with a text and a category colour (Work, Social, Appointment, Leave requested, Leave to request); × removes a row.
   - **Working in Milano** / **Marta** — toggles.
   - **Where will I be** — type a location or tap a quick city chip. Add new cities with the "Add a city" box; tap × on a chip to delete that city from the list.
   - **Save day**, or **Clear** (top-left) to empty the day.
 - **Move a flight / train to another day**: in the day editor, every flight/train row has a **📅 Move** button. Tap it, pick the target date, and that leg jumps to the chosen day (it's removed from the current day and the current day is committed at the same time). Both days sync immediately.
-- **Bulk edit** (📋 **Bulk** in the header): apply the same change across a date range in one go. Pick a **from** and **to** date (defaults to the visible month), then set any of: **Marta** (set / remove / no change), **Working in Milano** (set / remove / no change), **Set location** (overwrite the location on every day in range, with city quick-chips), and **Add an event** (append the same event + category to every day). Tap **Apply to range**, or **Done** (top-right of the sheet), which also saves any pending changes before closing (previously **Done** discarded them, only **Apply to range** saved — fixed). **Clear range** (top-left of the sheet) empties every day in the range (asks for confirmation first). Anything left on "No change" / unchecked is skipped. All changes sync to every device.
-- **Monthly summary** (compact card pinned to the **bottom**) auto-counts days per location, plus a **Marta** days counter and a **🎫 Milano** (carnet) days counter when either is non-zero.
+- **Bulk edit** (📋 **Bulk** in the header): apply the same change across a date range in one go. Pick a **from** and **to** date (defaults to the visible month), then set any of: **Worked in Milano** (set / remove / no change — "remove" also clears that day's carnet tickets, otherwise they would re-imply the flag), **Marta** (set / remove / no change), **Set location** (overwrite the location on every day in range, with city quick-chips), and **Add an event** (append the same event + category to every day). Tap **Apply to range**, or **Done** (top-right of the sheet), which also saves any pending changes before closing (previously **Done** discarded them, only **Apply to range** saved — fixed). **Clear range** (top-left of the sheet) empties every day in the range (asks for confirmation first). Anything left on "No change" / unchecked is skipped. All changes sync to every device.
+- **Monthly summary** (compact card pinned to the **bottom**) auto-counts days per **sleep** location, plus **MI Milano** (days worked in Milano, whether set by hand or inferred from a carnet), **🎫 Tickets** (carnet tickets used that month) and **Marta** days. Each is shown only when non-zero.
 
 ## Trenitalia carnet
 
@@ -40,7 +43,14 @@ Track a carnet (a booklet of N train tickets) and how many you've used. A small 
 - **New carnet bought** — record a freshly bought booklet: pick the purchase date (defaults to today), the number of tickets (defaults to 10), and the company (defaults to Trenitalia). The most recently bought carnet is always the "current" one.
 - **All carnets** — history of every carnet with its used / remaining count; × deletes a record.
 
-How the counter works: each day you flag **Carnet to Milano** and/or **Carnet return** in the day editor counts as one ticket used. The current carnet's count is every flagged ticket on/after its purchase date (and before the next carnet's date), so buying a new carnet resets the count from that day. Everything (toggles, leg company, carnet records) is stored in the database and synced across devices.
+How the counter works: each day you flag **Carnet to Milano** and/or **Carnet return** in the day editor counts as one ticket used. A carnet only counts tickets flagged **from its own purchase date onwards** and **before the next carnet's date**, so buying a new carnet resets the count from that day.
+
+Two refinements that make a **future-dated** carnet behave correctly:
+
+- **"Current" = the most recent carnet bought on or before today.** A carnet you record with a future purchase date is **upcoming**, not current: it no longer hijacks the card (which used to show it with 0 used and a full "tickets left", while the booklet actually in your pocket was pushed into history). It still counts only the tickets from its own start date onwards, and the carnet in use keeps its own count until that date. If every recorded carnet is in the future, the nearest one is shown and labelled "Next carnet (not started yet)".
+- **Used-so-far vs planned.** The headline count and the progress bar are **tickets up to today**; commutes you have already flagged on future days are reported separately as "N more already planned" (with the eventual `used/size` in the manager), so a month of planned trips no longer makes the booklet look spent.
+
+Everything (toggles, leg company, carnet records) is stored in the database and synced across devices.
 
 ## Backup / Sync
 
@@ -75,6 +85,23 @@ scripts share one global lexical scope; the module talks to them only through
 `window.*` hooks (see below).
 
 ## Project state / where we left off (last session)
+
+- **Latest session (Milano flag restored + carnet future fix, VERSION 9).** Three changes:
+  1. **`milano` is a real flag again.** `parseSeed` now reads the `milano` seed flag
+     (it was ignoring it), `normalizeDay` keeps `!!d.milano || carnetOut || carnetBack`,
+     the day editor has an **edMilano** toggle that a carnet ticket force-checks and
+     locks (`syncMilanoLock()`), `collectDayFromEditor` ORs the three, the grid shows
+     `MI` when there is no carnet, `dayColor` returns the commute grey when
+     `milano && (!loc || loc === HOME_CITY)`, and bulk edit gained a `bulkMilano`
+     tri-state (its "off" also clears `carnetOut`/`carnetBack`).
+  2. **Carnet future-date handling.** `carnetStats()` now marks the current carnet as
+     the latest one with `date <= today` (future ones are `future: true`, tagged
+     "upcoming") and splits usage into `usedToDate` / `planned`. The card and the
+     manager report the to-date figure, with the planned tail called out separately.
+  3. **Wording:** the location field is now "Where will I sleep?" and the summary
+     header "where I'll sleep", to match the convention that the city is the
+     overnight city.
+
 
 - Feature-complete and deployed to GitHub Pages. Implemented, in order, over the
   sessions: editable days, unlimited events, unlimited flights/trains, editable
@@ -264,8 +291,8 @@ A day object:
 
 ```js
 {
-  loc: 'Torino',            // free text location ('' = unset)
-  milano: false,            // working in Milano that day
+  loc: 'Torino',            // free text: the city where I SLEEP that night ('' = unset)
+  milano: false,            // worked in Milano that day (own flag; any carnet ticket forces it true)
   marta: false,             // Marta is with me
   carnetOut: false,         // uses a Trenitalia carnet ticket to Milano (outbound)
   carnetBack: false,        // uses a Trenitalia carnet ticket on the way back
@@ -294,7 +321,7 @@ One line per day, `;`-separated:
 date ; loc ; flags ; travel ; events
 ```
 
-- **flags** — comma list from `{milano, marta, cout, cback}` (`cout` = carnet to Milano, `cback` = carnet return).
+- **flags** — comma list from `{milano, marta, cout, cback}` (`milano` = worked in Milano, `cout` = carnet to Milano, `cback` = carnet return). `cout`/`cback` imply `milano`; `parseSeed` reads the `milano` flag on its own too (it used to ignore it and derive Milano purely from the carnet flags, which silently dropped every Milano day in the seed).
 - **travel** — legs joined by `|`, each `mode:FROM-TO@TIME` (time optional; keep the `@`, e.g. `f:FCO-MAD@`). Route is split on the first `-`. A booked (already bought) leg adds `!` to the mode: `f!:FCO-OLB@16:00` (booked) vs `f:FCO-OLB@16:00` (to buy). Legs default to "to buy" (red). An optional company is appended after a `#`, e.g. `f:FCO-OLB@16:00#Ryanair`. An optional flight booking reference (6-char alphanumeric) is appended last after a `~`, e.g. `f!:FCO-OLB@16:00#Ryanair~AB12CD`. An upcoming flight stays red until it is booked AND has a valid `~ref` (so existing seed flights, which have none, show red); past flights stay green when booked even without a ref.
 - **events** — slots joined by `|`, each `cat:text`. Split on the first `:`, so times like `18:30` in the text are fine (`appt:Parrucchiere 18:30`).
 
@@ -307,7 +334,8 @@ through 2026-12-31** (214 days). Add months by appending lines.
 
 - `renderMonth()` — dispatcher: sets the month label, then calls `renderList()` or `renderGrid()` per `viewMode`, plus `renderSummary()`.
 - `renderList(daysInMonth, tk)` — the agenda day rows (full chips, `(Milano)` under the date, holiday badge, pink Marta dot); `renderGrid(daysInMonth, tk)` — the Mon-first month grid (location-tinted compact cells, `(MI)`, holiday-tinted number, Marta dot). `setViewMode('list'|'grid')` toggles and persists under `travelCalendarView`. Day tint comes from `dayColor(dy)` (commute-aware); event dot colours from `catDot(cat)`.
-- `renderSummary()` — per-location day counts, plus a Marta days tally and a 🎫 Milano (carnet) days tally (each shown only when non-zero); shown in the compact card at the bottom.
+- `renderSummary()` — per-sleep-location day counts, plus **MI Milano** (days with `milano`), **🎫 Tickets** (carnet tickets in the month) and **Marta** tallies (each shown only when non-zero); in the compact card at the bottom.
+- `carnetStats()` — one row per carnet with `used` (whole window), `usedToDate` (stops at today), `planned` (`used - usedToDate`), `remaining` / `remainingToDate`, `future` (`date > today`) and `isCurrent` (the last carnet with `date <= today`, else the earliest if all are future). `currentCarnet()` / `upcomingCarnet()` read off it; `addDaysKey(key,n)` / `minKey(a,b)` are the date helpers behind the today cut-off.
 - `openDayEditor(key)` / `collectDayFromEditor()` / `saveDayEditor()` — the bottom-sheet editor. `readLegRow(row)` reads a single flight/train row (shared with the move feature). The legend and per-row event swatches are colour-driven by `evCatColor`.
 - `moveLegToDay(dateInput)` — moves one flight/train leg to the date picked in its row's hidden `.move-date` input (📅 Move button); appends to the target day, removes the source row, commits + syncs both days.
 - `openBulk()` / `applyBulk(clearMode, opts)` / `closeBulk()` / `hideBulkModal()` — the Bulk edit sheet; `closeBulk()` calls `applyBulk(false, { silent: true })` before hiding so **Done** saves pending changes (not just **Apply to range**); `dateRangeKeys(a,b)` builds the inclusive key list; `bulkLocChipsHtml`/`renderBulkChips` render the city quick-chips.

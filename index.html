@@ -497,6 +497,14 @@ body {
         </div>
       </div>
       <div class="fieldcard">
+        <div class="field-label">Worked in Milano</div>
+        <select class="text-in" id="bulkMilano">
+          <option value="">No change</option>
+          <option value="on">Set Milano</option>
+          <option value="off">Remove Milano</option>
+        </select>
+      </div>
+      <div class="fieldcard">
         <div class="field-label">Marta</div>
         <select class="text-in" id="bulkMarta">
           <option value="">No change</option>
@@ -558,7 +566,7 @@ body {
     </div>
     <div class="modal-body">
       <div class="fieldcard">
-        <p class="mini-note" style="margin-top:0;margin-bottom:10px;">Pick a colour per city and per event type. <b>Milano commute</b> only tints days where you're based in Torino; on any other city the city's own colour wins. Tap <b>Auto</b> to revert to default.</p>
+        <p class="mini-note" style="margin-top:0;margin-bottom:10px;">Pick a colour per city and per event type. <b>Milano commute</b> tints the days you worked in Milano and slept at home (or with no city set); if you sleep in another city, that city's colour wins. Tap <b>Auto</b> to revert to default.</p>
         <div id="colorRows"></div>
       </div>
     </div>
@@ -601,7 +609,7 @@ body {
 // CONFIG
 // ============================================================
 const STORAGE_KEY = 'travelCalendarData';
-const VERSION = 8;
+const VERSION = 9;
 // Only the month grid view remains (the old agenda/list view was dropped).
 let viewMode = 'grid';
 
@@ -658,7 +666,10 @@ const EV_DEFAULT = '#ffcc00';
 // ============================================================
 // SEED (published defaults). Compact line format:
 //   date ; loc ; flags ; travel ; events
-//   flags  = comma list of {milano, marta}
+//   flags  = comma list of {milano, marta, cout, cback}
+//            milano = worked in Milano; cout/cback = carnet ticket out/back
+//            (either carnet flag implies milano)
+//   loc    = the city where I SLEEP that night
 //   travel = legs joined by | , each  mode:FROM-TO@TIME  (mode f=flight, t=train)
 //   events = slots joined by | , each  cat:text          (cat key, then ':')
 // Transcribed from the current planning sheet (Jun–Dec 2026).
@@ -883,7 +894,7 @@ const SEED = `
 <script>
 // ============================================================
 // DATA MODEL
-// A day object: { loc, milano:bool, marta:bool,
+// A day object: { loc, milano:bool, marta:bool, carnetOut:bool, carnetBack:bool,
 //   travel:[{mode:'f'|'t', from, to, time, co, ref, booked:bool, bag:bool}],
 //   events:[{cat, text}] }  (events and travel are unlimited)
 // ============================================================
@@ -958,7 +969,9 @@ function parseSeed(text) {
     }
     out[date] = {
       loc,
-      milano: flags.includes('cout') || flags.includes('cback'),
+      // "milano" = worked in Milano that day. Set explicitly with the `milano`
+      // flag, or inferred from a carnet ticket (cout/cback).
+      milano: flags.includes('milano') || flags.includes('cout') || flags.includes('cback'),
       marta: flags.includes('marta'),
       carnetOut: flags.includes('cout'),
       carnetBack: flags.includes('cback'),
@@ -987,12 +1000,12 @@ function loadData() {
 function cloneDay(d) { return JSON.parse(JSON.stringify(d)); }
 function normalizeDay(d) {
   d = d || {};
-  // "Working in Milano" is no longer a separate flag: a day counts as Milano
-  // when it uses at least one carnet ticket (outbound and/or return).
+  // "Working in Milano" is a real flag you can set on its own; a carnet ticket
+  // (outbound and/or return) always implies it.
   const carnetOut = !!d.carnetOut, carnetBack = !!d.carnetBack;
   return {
     loc: d.loc || '',
-    milano: carnetOut || carnetBack,
+    milano: !!d.milano || carnetOut || carnetBack,
     marta: !!d.marta,
     carnetOut: carnetOut,
     carnetBack: carnetBack,
@@ -1123,8 +1136,11 @@ function commuteColor() {
 }
 // the colour a whole day should be tinted with (commute wins only on the home city)
 function dayColor(dy) {
-  if (!dy || !dy.loc) return null;
-  if (dy.milano && dy.loc === HOME_CITY) return commuteColor();
+  if (!dy) return null;
+  // The location is where I sleep. A Milano working day tints the cell dark grey
+  // unless I actually sleep somewhere other than home (then that city wins).
+  if (dy.milano && (!dy.loc || dy.loc === HOME_CITY)) return commuteColor();
+  if (!dy.loc) return null;
   return cityColor(dy.loc);
 }
 
@@ -1204,7 +1220,8 @@ function renderGrid(daysInMonth, tk) {
     (dy.events || []).forEach(e => { if (e.text) dots += `<span class="gdot" style="background:${eventDotColor()}"></span>`; });
 
     const carnetN = (dy.carnetOut ? 1 : 0) + (dy.carnetBack ? 1 : 0);
-    const flags = carnetN ? '🎫'.repeat(carnetN) : '';
+    // 🎫 per carnet ticket used; a Milano day set by hand (no carnet) shows MI.
+    const flags = carnetN ? '🎫'.repeat(carnetN) : (dy.milano ? 'MI' : '');
     const martaDot = dy.marta ? `<span class="marta-dot" title="Marta"></span>` : '';
 
     const dc = dayColor(dy);
@@ -1232,17 +1249,20 @@ function renderGrid(daysInMonth, tk) {
 function renderSummary(daysInMonth) {
   const counts = {};
   let milanoDays = 0;
+  let carnetTickets = 0;
   let martaDays = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const key = ymd(viewYear, viewMonth, d);
     const dy = DATA[key]; if (!dy) continue;
     if (dy.milano) milanoDays++;
+    if (dy.carnetOut) carnetTickets++;
+    if (dy.carnetBack) carnetTickets++;
     if (dy.marta) martaDays++;
     if (!dy.loc) continue;
     counts[dy.loc] = (counts[dy.loc] || 0) + 1;
   }
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  let html = `<h2>${MONTHS[viewMonth]} — where I'll be</h2><div class="tally-grid">`;
+  let html = `<h2>${MONTHS[viewMonth]} — where I'll sleep</h2><div class="tally-grid">`;
   if (!entries.length) {
     html += `<span class="tally"><span class="t-name">No locations set yet</span></span>`;
   } else {
@@ -1253,7 +1273,10 @@ function renderSummary(daysInMonth) {
   }
   if (milanoDays) {
     const mc = commuteColor();
-    html += `<span class="tally" style="background:${mc.bg};color:${mc.fg};" title="Days working in Milano (carnet days)"><span class="t-name">🎫 Milano</span><span class="t-count" style="color:inherit;">${milanoDays}</span></span>`;
+    html += `<span class="tally" style="background:${mc.bg};color:${mc.fg};" title="Days worked in Milano (set by hand or inferred from a carnet ticket)"><span class="t-name">MI Milano</span><span class="t-count" style="color:inherit;">${milanoDays}</span></span>`;
+  }
+  if (carnetTickets) {
+    html += `<span class="tally" title="Carnet tickets used this month"><span class="t-name">🎫 Tickets</span><span class="t-count" style="color:inherit;">${carnetTickets}</span></span>`;
   }
   if (martaDays) {
     html += `<span class="tally" title="Days with Marta"><span class="t-name">Marta</span><span class="t-count" style="color:inherit;">${martaDays}</span></span>`;
@@ -1361,9 +1384,14 @@ function openDayEditor(key) {
     </div>
     <div class="fieldcard">
       <div class="toggle-row">
+        <div><div class="tl-label">Worked in Milano</div><div class="tl-sub">Colours the day dark grey and counts in the monthly tally</div></div>
+        <label class="switch"><input type="checkbox" id="edMilano" ${dy.milano ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" style="margin-top:6px;">
         <div><div class="tl-label">Marta</div><div class="tl-sub">Marta is with me</div></div>
         <label class="switch"><input type="checkbox" id="edMarta" ${dy.marta ? 'checked' : ''}><span class="slider"></span></label>
       </div>
+      <p class="mini-note">Set this on its own for a Milano day with no carnet ticket. Using a carnet below switches it on automatically.</p>
     </div>
     <div class="fieldcard">
       <div class="field-label">🎫 Trenitalia carnet</div>
@@ -1375,17 +1403,17 @@ function openDayEditor(key) {
         <div><div class="tl-label">Carnet return</div><div class="tl-sub">Use a carnet ticket (back)</div></div>
         <label class="switch"><input type="checkbox" id="edCarnetBack" ${dy.carnetBack ? 'checked' : ''}><span class="slider"></span></label>
       </div>
-      <p class="mini-note">Using at least one carnet marks the day as working in Milano (darker grey on Torino days).</p>
+      <p class="mini-note">Each ticket counts against the current carnet. Using one also marks the day as worked in Milano.</p>
     </div>
     <div class="fieldcard">
-      <div class="field-label">Where will I be?</div>
-      <input class="text-in" id="edLoc" placeholder="Location" value="${esc(dy.loc)}">
+      <div class="field-label">Where will I sleep?</div>
+      <input class="text-in" id="edLoc" placeholder="City where I sleep" value="${esc(dy.loc)}">
       <div class="quick-chips" id="locChips">${locChipsHtml(dy.loc)}</div>
       <div class="add-city-row">
         <input class="text-in" id="newCity" placeholder="Add a city">
         <button type="button" class="btn btn-secondary" id="addCity">Add</button>
       </div>
-      <p class="mini-note">Tap a city to select it. Tap × on a chip to delete it.</p>
+      <p class="mini-note">The city is where I sleep that night, not where I work. Tap a city to select it, × on a chip to delete it.</p>
     </div>
     <button class="btn btn-primary" id="daySaveBtn">Save day</button>
   `;
@@ -1422,6 +1450,20 @@ function openDayEditor(key) {
     document.getElementById('evsList').insertAdjacentHTML('beforeend', evRowHtml());
   });
 
+  // A carnet ticket implies a Milano working day: force the toggle on and lock it.
+  const edMilano = document.getElementById('edMilano');
+  const edCOut = document.getElementById('edCarnetOut');
+  const edCBack = document.getElementById('edCarnetBack');
+  function syncMilanoLock() {
+    const onCarnet = edCOut.checked || edCBack.checked;
+    if (onCarnet) edMilano.checked = true;
+    edMilano.disabled = onCarnet;
+    edMilano.closest('.toggle-row').style.opacity = onCarnet ? '0.65' : '';
+  }
+  edCOut.addEventListener('change', syncMilanoLock);
+  edCBack.addEventListener('change', syncMilanoLock);
+  syncMilanoLock();
+
   document.getElementById('daySaveBtn').addEventListener('click', saveDayEditor);
   dayEditorSnapshot = JSON.stringify(collectDayFromEditor());   // baseline for dirty-detection
   document.getElementById('dayModal').classList.remove('hidden');
@@ -1433,7 +1475,8 @@ function collectDayFromEditor() {
   const marta = document.getElementById('edMarta').checked;
   const carnetOut = document.getElementById('edCarnetOut').checked;
   const carnetBack = document.getElementById('edCarnetBack').checked;
-  const milano = carnetOut || carnetBack;   // Milano = at least one carnet ticket
+  // Milano = set by hand, or implied by a carnet ticket.
+  const milano = document.getElementById('edMilano').checked || carnetOut || carnetBack;
 
   const legs = [];
   body.querySelectorAll('.leg').forEach(row => {
@@ -1561,6 +1604,7 @@ function openBulk() {
   document.getElementById('bulkFrom').value = ymd(viewYear, viewMonth, 1);
   document.getElementById('bulkTo').value = ymd(viewYear, viewMonth, dim);
   document.getElementById('bulkMarta').value = '';
+  document.getElementById('bulkMilano').value = '';
   document.getElementById('bulkSetLoc').checked = false;
   document.getElementById('bulkLoc').value = '';
   document.getElementById('bulkAddEv').checked = false;
@@ -1599,16 +1643,20 @@ function applyBulk(clearMode, opts) {
     keys.forEach(key => { DATA[key] = normalizeDay({}); });
   } else {
     const marta = document.getElementById('bulkMarta').value;
+    const milano = document.getElementById('bulkMilano').value;
     const setLoc = document.getElementById('bulkSetLoc').checked;
     const loc = document.getElementById('bulkLoc').value.trim();
     const addEv = document.getElementById('bulkAddEv').checked;
     const evText = document.getElementById('bulkEvText').value.trim();
     const evTime = document.getElementById('bulkEvTime').value.trim();
     // Silent auto-save on "Done" has nothing to do if no option was changed; skip quietly.
-    if (!marta && !setLoc && !(addEv && evText)) { if (!silent) toast('Nothing to apply'); return; }
+    if (!marta && !milano && !setLoc && !(addEv && evText)) { if (!silent) toast('Nothing to apply'); return; }
     keys.forEach(key => {
       const dy = cloneDay(DATA[key] || normalizeDay({}));
       if (marta) dy.marta = (marta === 'on');
+      if (milano === 'on') dy.milano = true;
+      // Removing Milano also drops the carnet tickets, otherwise they'd re-imply it.
+      if (milano === 'off') { dy.milano = false; dy.carnetOut = false; dy.carnetBack = false; }
       if (setLoc) dy.loc = loc;
       if (addEv && evText) dy.events.push({ cat: '', text: evText, time: evTime });
       DATA[key] = normalizeDay(dy);
@@ -1691,16 +1739,42 @@ function countCarnetTickets(fromKey, toKeyExcl) {
   });
   return n;
 }
-// each carnet with its used / remaining count (used between its date and the next)
+function addDaysKey(key, n) {
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(y, m - 1, d); dt.setDate(dt.getDate() + n);
+  return ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+function minKey(a, b) { if (!a) return b; if (!b) return a; return a < b ? a : b; }
+
+// Each carnet with its usage. A carnet only ever counts tickets flagged from its
+// own purchase date onwards (and before the next carnet starts), so recording a
+// carnet you will buy in the future does not steal tickets from the one in use.
+// `used` is everything in that window; `usedToDate` stops at today and `planned`
+// is the part still ahead, so a future trip already flagged does not read as spent.
+// The CURRENT carnet is the most recent one bought on or before today (a
+// future-dated carnet is "upcoming", not current).
 function carnetStats() {
   const cs = sortedCarnets();
+  const today = todayKey();
+  const tomorrow = addDaysKey(today, 1);
+  let activeIdx = -1;
+  cs.forEach((c, i) => { if (c.date <= today) activeIdx = i; });
+  if (activeIdx < 0 && cs.length) activeIdx = 0;   // all in the future: show the nearest
   return cs.map((c, i) => {
     const next = cs[i + 1] ? cs[i + 1].date : null;
     const used = countCarnetTickets(c.date, next);
-    return Object.assign({}, c, { used, remaining: c.size - used, isCurrent: i === cs.length - 1 });
+    const usedToDate = countCarnetTickets(c.date, minKey(next, tomorrow));
+    return Object.assign({}, c, {
+      used, usedToDate, planned: used - usedToDate,
+      remaining: c.size - used,
+      remainingToDate: c.size - usedToDate,
+      future: c.date > today,
+      isCurrent: i === activeIdx
+    });
   });
 }
-function currentCarnet() { const s = carnetStats(); return s.length ? s[s.length - 1] : null; }
+function currentCarnet() { const s = carnetStats(); return s.find(c => c.isCurrent) || null; }
+function upcomingCarnet() { const s = carnetStats(); return s.find(c => c.future && !c.isCurrent) || null; }
 function addCarnet(date, size, company) {
   date = (date || '').trim();
   if (!date) { toast('Pick a purchase date'); return false; }
@@ -1731,13 +1805,19 @@ function renderCarnetCard() {
     el.innerHTML = `<span class="cc-icon">🎫</span><div class="cc-main"><div class="cc-line">No carnet set</div><div class="cc-sub">Tap to add the one you bought</div></div>`;
     return;
   }
+  const nxt = upcomingCarnet();
+  const sub = [
+    cur.future ? `starts ${fmtDateShort(cur.date)}` : `since ${fmtDateShort(cur.date)}`,
+    cur.planned ? `${cur.planned} more already planned` : '',
+    nxt ? `next carnet from ${fmtDateShort(nxt.date)}` : ''
+  ].filter(Boolean).join(' · ');
   el.innerHTML =
     `<span class="cc-icon">🎫</span>` +
     `<div class="cc-main">` +
-      `<div class="cc-line"><b>${esc(cur.company)}</b> · ${cur.used}/${cur.size} used ` +
-        `<span class="cc-left ${leftClass(cur.remaining)}">${leftLabel(cur.remaining)}</span></div>` +
-      carnetBar(cur.used, cur.size) +
-      `<div class="cc-sub">since ${fmtDateShort(cur.date)}</div>` +
+      `<div class="cc-line"><b>${esc(cur.company)}</b> · ${cur.usedToDate}/${cur.size} used ` +
+        `<span class="cc-left ${leftClass(cur.remainingToDate)}">${leftLabel(cur.remainingToDate)}</span></div>` +
+      carnetBar(cur.usedToDate, cur.size) +
+      `<div class="cc-sub">${sub}</div>` +
     `</div>`;
 }
 
@@ -1745,15 +1825,16 @@ function renderCarnetCard() {
 function renderCarnet() {
   const body = document.getElementById('carnetBody'); if (!body) return;
   const stats = carnetStats();
-  const cur = stats.length ? stats[stats.length - 1] : null;
+  const cur = stats.find(c => c.isCurrent) || null;
   let html = '';
   if (cur) {
     html += `<div class="fieldcard carnet-current">
-      <div class="field-label">Current carnet</div>
-      <div class="cc-line" style="font-size:15px;margin-bottom:6px;"><b>${esc(cur.company)}</b> · bought ${fmtDateShort(cur.date)}</div>
-      <div class="cc-big"><span class="cc-used">${cur.used}</span> / ${cur.size} tickets used
-        <span class="cc-left ${leftClass(cur.remaining)}">${leftLabel(cur.remaining)}</span></div>
-      ${carnetBar(cur.used, cur.size)}
+      <div class="field-label">${cur.future ? 'Next carnet (not started yet)' : 'Current carnet'}</div>
+      <div class="cc-line" style="font-size:15px;margin-bottom:6px;"><b>${esc(cur.company)}</b> · ${cur.future ? 'starts' : 'bought'} ${fmtDateShort(cur.date)}</div>
+      <div class="cc-big"><span class="cc-used">${cur.usedToDate}</span> / ${cur.size} tickets used
+        <span class="cc-left ${leftClass(cur.remainingToDate)}">${leftLabel(cur.remainingToDate)}</span></div>
+      ${carnetBar(cur.usedToDate, cur.size)}
+      ${cur.planned ? `<p class="mini-note" style="margin-bottom:0;">${cur.planned} more ticket${cur.planned === 1 ? '' : 's'} already flagged on future days (${cur.used}/${cur.size} once travelled).</p>` : ''}
     </div>`;
   } else {
     html += `<div class="fieldcard"><p class="mini-note" style="margin:0;">No carnet recorded yet. Add the booklet you bought below, then flag the commute days that use it.</p></div>`;
@@ -1766,15 +1847,17 @@ function renderCarnet() {
     </div>
     <input class="text-in" id="carnetCompany" placeholder="Company (e.g. Trenitalia)" value="${esc(cur ? cur.company : 'Trenitalia')}" style="margin-top:8px;">
     <button type="button" class="btn btn-primary" id="carnetAdd" style="margin-top:10px;">Add carnet</button>
-    <p class="mini-note">The most recent carnet is your current one. Tickets you flag on/after its purchase date count against it.</p>
+    <p class="mini-note">The current carnet is the most recent one bought on or before today. A future purchase date is fine: that carnet only starts counting tickets from that day onwards, and the one in use keeps its own count until then.</p>
   </div>`;
   if (stats.length) {
     html += `<div class="fieldcard"><div class="field-label">All carnets</div>`;
     stats.slice().reverse().forEach(c => {
+      const tag = c.isCurrent ? ' <span class="carnet-tag">current</span>'
+                : c.future ? ' <span class="carnet-tag">upcoming</span>' : '';
       html += `<div class="carnet-row${c.isCurrent ? ' current' : ''}" data-date="${esc(c.date)}">
         <div class="carnet-row-main">
-          <div class="carnet-row-top"><b>${esc(c.company)}</b>${c.isCurrent ? ' <span class="carnet-tag">current</span>' : ''}</div>
-          <div class="carnet-row-sub">${fmtDateShort(c.date)} · ${c.used}/${c.size} used · <span class="cc-left ${leftClass(c.remaining)}">${leftLabel(c.remaining)}</span></div>
+          <div class="carnet-row-top"><b>${esc(c.company)}</b>${tag}</div>
+          <div class="carnet-row-sub">${fmtDateShort(c.date)} · ${c.usedToDate}/${c.size} used${c.planned ? ` (+${c.planned} planned)` : ''} · <span class="cc-left ${leftClass(c.remainingToDate)}">${leftLabel(c.remainingToDate)}</span></div>
         </div>
         <button type="button" class="row-del carnet-del" title="Delete">&times;</button>
       </div>`;
