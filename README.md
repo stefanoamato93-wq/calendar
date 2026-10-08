@@ -27,13 +27,25 @@ The app ships its own icon (an inline SVG calendar), wired up at runtime as the 
   - **Flights / Trains** — add as many legs as you need (`+ Add flight / train`); each row has mode (train/flight), From, To, time, the **airline / train company** (free text, e.g. Trenitalia, Ryanair), a **booking reference** (flights only, a 6-char alphanumeric code, e.g. a PNR), a **booked toggle** (green ✓ Booked = already bought / red ✗ To buy = still to purchase), and a × to remove it. The company shows on the day's travel chip. An **upcoming flight** (today or later) only shows green when it is booked **and** has a valid 6-char reference; one that is missing the reference (every existing flight starts without one) is shown with the same **red** "to buy" colour coding until you add the code. **Past flights keep the simple rule** (booked = green, no reference required), so flights you have already taken are not flagged red. Trains ignore the reference.
   - **Worked in Milano** — a standalone toggle. Set it on any day I worked in Milano even when no carnet ticket was used (I drove, someone gave me a lift, I bought a single ticket). It tints the day **dark grey** (the "Milano commute" colour) when I slept at home (Torino) or no city is set, shows **MI** in the grid cell, and feeds the **MI Milano** counter in the monthly summary. If the day already uses a carnet ticket the flag is **inferred**: the toggle switches itself on and locks (greyed out), so it can never contradict the carnet.
   - **Trenitalia carnet** — two toggles per day: **Carnet to Milano** (use a carnet ticket outbound) and **Carnet return** (use one for the trip back). A day using the carnet shows 🎫 per ticket in the grid cell (so `🎫🎫` for out + back). Each toggled trip counts as one ticket against the current carnet (see Carnet below) and implies "worked in Milano".
-  - **Events** — add as many as you need (`+ Add event`), each with a text and a category colour (Work, Social, Appointment, Leave requested, Leave to request); × removes a row.
+  - **Events** — add as many as you need (`+ Add event`), each with a text and a category colour (Work, Social, Appointment, Leave requested, Leave to request); × removes a row. Each row has a **🔁** toggle: switch it on (gold) to make the event **repeat on this date every year** (birthdays), see "Yearly events" below.
   - **Working in Milano** / **Marta** — toggles.
   - **Where will I be** — type a location or tap a quick city chip. Add new cities with the "Add a city" box; tap × on a chip to delete that city from the list.
-  - **Save day**, or **Clear** (top-left) to empty the day.
+  - **Save day**, or **Clear** (top-left) to empty the day. Clear leaves yearly (🔁) events alone; remove those with their × instead.
 - **Move a flight / train to another day**: in the day editor, every flight/train row has a **📅 Move** button. Tap it, pick the target date, and that leg jumps to the chosen day (it's removed from the current day and the current day is committed at the same time). Both days sync immediately.
 - **Bulk edit** (📋 **Bulk** in the header): apply the same change across a date range in one go. Pick a **from** and **to** date (defaults to the visible month), then set any of: **Worked in Milano** (set / remove / no change — "remove" also clears that day's carnet tickets, otherwise they would re-imply the flag), **Marta** (set / remove / no change), **Set location** (overwrite the location on every day in range, with city quick-chips), and **Add an event** (append the same event + category to every day). Tap **Apply to range**, or **Done** (top-right of the sheet), which also saves any pending changes before closing (previously **Done** discarded them, only **Apply to range** saved — fixed). **Clear range** (top-left of the sheet) empties every day in the range (asks for confirmation first). Anything left on "No change" / unchecked is skipped. All changes sync to every device.
 - **Monthly summary** (compact card pinned to the **bottom**) auto-counts days per **sleep** location, plus **MI Milano** (days worked in Milano, whether set by hand or inferred from a carnet), **🎫 Tickets** (carnet tickets used that month) and **Marta** days. Each is shown only when non-zero.
+
+## Yearly events (birthdays)
+
+Birthdays (and anything else that comes round every year) are **yearly events**: they show on that date in **every year**, past and future, not just the year they were entered.
+
+- **Make an event yearly**: in the day editor tap its **🔁** (gold = yearly, grey = this day only), then **Save day**. Tapping 🔁 off turns it back into a one-off event on the day you have open.
+- **Where they show**: an event dot in the grid cell like any other event, and at the top of the Events list in the day editor with 🔁 on.
+- **Move a yearly event** with its 📅 button: only the month and day matter, so the birthday moves to the new date for every year.
+- **Clear** on a day empties the day but keeps its yearly events.
+- **Search** lists each yearly event once, at its **next occurrence** (today or later), marked 🔁. Searching `yearly` / `annuale` lists them all.
+- A **29 Feb** birthday shows on **28 Feb** in non-leap years.
+- **Current list (moved here on 8 Oct 2026 from the one-off 2026 entries):** 27 Jun Marta, 30 Jun Daneshgaran, 7 Jul Ale Lepido, 9 Jul Cerry, 11 Jul Luca panni, 22 Jul Lepido, 23 Jul Novi, 8 Aug Raf Borrello, 10 Sep Dado, 11 Oct Gabri, 21 Oct Andrea/Caro, 5 Nov Palli, 18 Dec Albi, 30 Dec Pino. The `Compleanno …` events were removed from those 2026 days (and from the SEED) so they do not show twice.
 
 ## Trenitalia carnet
 
@@ -75,7 +87,7 @@ To change the **published default** baseline (what a brand-new device sees befor
 A single-file vanilla-JS app (`index.html`, no framework, no build). The published
 plan is baked into a compact `SEED` string; per-device edits are layered on top,
 synced to a **Firebase Realtime Database**, and cached in `localStorage`. Bump
-`VERSION` (top of the config `<script>`, currently `4`) on functional changes.
+`VERSION` (top of the config `<script>`, currently `10`) on functional changes.
 
 The file has 6 `<script>` blocks: (0) a head `<script>` that builds the app icon
 (favicon / apple-touch / data-URI manifest from an inline SVG), (1) a banner
@@ -86,7 +98,25 @@ scripts share one global lexical scope; the module talks to them only through
 
 ## Project state / where we left off (last session)
 
-- **Latest session (Milano flag restored + carnet future fix, VERSION 9).** Three changes:
+- **Latest session (yearly events / birthdays, VERSION 10).**
+  1. **New `recurring` list** of yearly events `{ md:'MM-DD', text, time }`, kept apart
+     from the days (localStorage `travelCalendarRecurring`, RTDB `travelCalendar/recurring`).
+     Helpers in the DATA MODEL script: `getRecurring`/`setRecurring` (sorted by md),
+     `recurringMds(key)` (28 Feb also carries 29 Feb in non-leap years),
+     `recurringFor(key)`, `setRecurringForKey(key, list)`, `nextOccurrenceKey(md)`.
+  2. **Day editor:** `evRowHtml(e, yearly)` adds a `.yearly-btn` 🔁 toggle and
+     `data-yearly`/`data-md` on the row; yearly rows render first. `collectDayFromEditor`
+     skips yearly rows, `collectYearlyFromEditor()` reads them, `commitYearlyFromEditor(key)`
+     writes them back (syncs only on change). Dirty-detection now compares
+     `editorStateJson()` (day + yearly rows). `moveEvToDay` on a yearly row changes its md.
+     `clearDay` keeps yearly events.
+  3. **Grid** adds an event dot per yearly event; **search** adds each yearly event once
+     at its next occurrence (`daySearchDoc(key, dy, recs)`).
+  4. **Data migration:** the 14 `Compleanno …` one-off events in the cloud were moved into
+     `travelCalendar/recurring` and removed from their 2026 days; the 6 seeded ones were
+     removed from the SEED.
+
+- **Previous session (Milano flag restored + carnet future fix, VERSION 9).** Three changes:
   1. **`milano` is a real flag again.** `parseSeed` now reads the `milano` seed flag
      (it was ignoring it), `normalizeDay` keeps `!!d.milano || carnetOut || carnetBack`,
      the day editor has an **edMilano** toggle that a carnet ticket force-checks and
@@ -183,8 +213,9 @@ scripts share one global lexical scope; the module talks to them only through
 - Node layout: `travelCalendar/days/<YYYY-MM-DD>`, `travelCalendar/locs` (array of
   city names), `travelCalendar/colors` (a flat `{key: "#hex"}` map; keys are a
   city name, `__commute__` for the Milano-commute colour, or `ev:<cat>` for an
-  event-category colour), and `travelCalendar/carnets` (array of
-  `{date, size, company}` carnet-purchase records).
+  event-category colour), `travelCalendar/carnets` (array of
+  `{date, size, company}` carnet-purchase records), and `travelCalendar/recurring`
+  (array of `{md:'MM-DD', text, time}` yearly events, e.g. birthdays).
 - **Security rules (required).** The DB is not globally open; rules are per-node.
   The published rules must include the calendar node:
   ```json
@@ -206,7 +237,7 @@ scripts share one global lexical scope; the module talks to them only through
 
 - The module is a thin transport. It exposes `window.fb` with:
   `ready`, `setDay(key,val)`, `removeDay(key)`, `setDays(obj)`, `setLocs(arr)`,
-  `setColors(obj)`, `setCarnets(arr)`, `removeAll()`.
+  `setColors(obj)`, `setCarnets(arr)`, `setRecurring(arr)`, `removeAll()`.
 - It calls back into the classic app via these `window` hooks (all defined in the
   CLOUD SYNC GLUE block of the main script):
   - `onRemoteDays(remoteObj)` → `applyRemoteDays`: rebuild `DATA` = SEED defaults +
@@ -216,9 +247,11 @@ scripts share one global lexical scope; the module talks to them only through
     refresh the colours modal if open.
   - `onRemoteCarnets(arr)` → `applyRemoteCarnets`: `setCarnets(arr|[])`, re-render
     the carnet card and (if open) the carnet manager.
+  - `onRemoteRecurring(v)` → `applyRemoteRecurring`: `setRecurring(...)` (accepts the
+    array or an object with numeric keys), re-render.
   - `onSyncStatus('online'|'offline')` → paints the header `#statusDot`.
   - `collectOverrides()` → days differing from SEED (incl. cleared days).
-  - `localLocsOverride()` / `localColors()` / `localCarnets()` → this device's
+  - `localLocsOverride()` / `localColors()` / `localCarnets()` / `localRecurring()` → this device's
     local customizations, used by the migration.
 - **Writes** are granular, from the classic side: `cloudSyncDay(key)` writes or
   removes one day (removes when the day equals the SEED default, so the DB stays
@@ -235,7 +268,8 @@ scripts share one global lexical scope; the module talks to them only through
   `null` snapshot is treated as a real Reset and clears local to defaults.
 - **localStorage keys:** `travelCalendarData` (day overrides cache, `{version,days}`),
   `travelCalendarLocs` (city list), `travelCalendarColors` (colour overrides),
-  `travelCalendarCarnets` (carnet-purchase records), `travelCalendarView`
+  `travelCalendarCarnets` (carnet-purchase records), `travelCalendarRecurring`
+  (yearly events), `travelCalendarView`
   (`list`|`grid`, device-local, NOT synced).
 
 ## Debugging sync
@@ -348,6 +382,7 @@ through 2026-12-31** (214 days). Add months by appending lines.
 - **Add a location quick chip**: edit `KNOWN_LOCS` (the seed defaults) and optionally `LOC_COLORS`. At runtime the city list is editable in-app and stored in `localStorage` under `travelCalendarLocs` (`getLocs`/`setLocs`/`addLoc`/`removeLoc`); it falls back to `KNOWN_LOCS`.
 - **Add an event category**: add to `EVENT_CATS`, give it a default colour in `EV_COLORS_DEFAULT`, and a short label in `LEG_SHORT` (the editor legend). It is then editable in the 🎨 modal automatically.
 - **Add/adjust a holiday**: edit `IT_HOLIDAYS` (`MM-DD` → label).
+- **Yearly events (birthdays)**: toggled per event row with 🔁 (`.yearly-btn`); stored in `travelCalendar/recurring` via `getRecurring`/`setRecurring`/`cloudSyncRecurring`, never in the day objects or the SEED. To bulk-load birthdays, write the array straight to the RTDB node (`{md:'MM-DD', text, time}`).
 - **Events / travel legs**: unlimited. Rows are added via the `+ Add` buttons (`legRowHtml`/`evRowHtml`) and removed via the `.row-del` × (delegated on `dayBody`). `collectDayFromEditor()` reads every `.leg` / `.evrow` in the DOM. A leg can be moved to another day with its **📅 Move** button (`moveLegToDay`).
 - **Bulk-edit a range**: 📋 **Bulk** in the header (`openBulk`/`applyBulk`); set Marta / Milano / location / an event across a from–to range, or **Clear range**.
 - **Change the app icon**: edit the `svg` string in the head `<script>` that builds the favicon / apple-touch / manifest.

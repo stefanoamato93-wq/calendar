@@ -252,6 +252,14 @@ body {
 }
 .bag-btn:active { opacity: .6; }
 .bag-btn.on { background: #cde6ff; color: #0a4a7a; border-color: #0a4a7a; }
+/* "repeat every year" toggle on an event row (birthdays etc.) */
+.yearly-btn {
+  border: 1px solid var(--border); border-radius: 9px; font-size: 15px; font-weight: 700;
+  padding: 0 9px; height: 38px; cursor: pointer; flex-shrink: 0; line-height: 1;
+  background: var(--input-bg); filter: grayscale(1); opacity: .55;
+}
+.yearly-btn:active { opacity: .4; }
+.yearly-btn.on { background: #ffe9a8; border-color: #b8860b; filter: none; opacity: 1; }
 /* On phones, give the 6-char booking code its own full-width row so it is never cut off */
 @media (max-width: 480px) {
   .leg .ref { flex: 1 1 100%; width: auto; font-size: 17px; letter-spacing: 3px; }
@@ -609,7 +617,7 @@ body {
 // CONFIG
 // ============================================================
 const STORAGE_KEY = 'travelCalendarData';
-const VERSION = 9;
+const VERSION = 10;
 // Only the month grid view remains (the old agenda/list view was dropped).
 let viewMode = 'grid';
 
@@ -701,7 +709,7 @@ const SEED = `
 2026-06-24;Torino;milano;;social:Decathlon|social:Ape Peppe
 2026-06-25;Roma;milano;t:Centrale-Termini@20:35;social:Vertortbre h16
 2026-06-26;Palermo;;f:FCO-PMO@18:00;
-2026-06-27;Palermo;;;social:Compleanno Marta
+2026-06-27;Palermo;;;
 2026-06-28;Palermo;;;
 2026-06-29;Torino;;f:PMO-TRN@6:05;
 2026-06-30;Torino;milano;;appt:Parrucchiere 18:30
@@ -713,7 +721,7 @@ const SEED = `
 2026-07-06;Madrid;;f:FCO-MAD@;work:Madrid Offsite 6-7
 2026-07-07;Madrid;;;work:Madrid Offsite 6-7
 2026-07-08;Torino;;f:MAD-TRN@;social:Concerto Ernia
-2026-07-09;Palermo;milano;f:TRN-PMO@20:30;social:Compleanno Cerry
+2026-07-09;Palermo;milano;f:TRN-PMO@20:30;
 2026-07-10;Palermo;;;appt:Psy
 2026-07-11;Palermo;;;
 2026-07-12;Palermo;;;
@@ -776,7 +784,7 @@ const SEED = `
 2026-09-07;Torino;;;
 2026-09-08;Torino;milano;t:Termini-Centrale@;
 2026-09-09;Torino;;;
-2026-09-10;Roma;milano;t:Centrale-Termini@;social:Compleanno Dado
+2026-09-10;Roma;milano;t:Centrale-Termini@;
 2026-09-11;Roma;;;
 2026-09-12;Roma;;;social:Concerto Jovanotti
 2026-09-13;Roma;;;
@@ -817,7 +825,7 @@ const SEED = `
 2026-10-18;Torino;marta;;
 2026-10-19;Torino;;;
 2026-10-20;Torino;milano;t:Termini-Centrale@;
-2026-10-21;Roma;;;social:Compleanno Andrea/Caro
+2026-10-21;Roma;;;
 2026-10-22;Torino;marta;;
 2026-10-23;Torino;marta;;
 2026-10-24;Torino;marta;;
@@ -875,7 +883,7 @@ const SEED = `
 2026-12-15;Torino;milano;t:Termini-Centrale@;
 2026-12-16;Torino;;;
 2026-12-17;Torino;marta;;
-2026-12-18;Torino;marta;;social:Compleanno Albi
+2026-12-18;Torino;marta;;
 2026-12-19;Torino;marta;;
 2026-12-20;Torino;marta;;
 2026-12-21;Torino;;;
@@ -885,7 +893,7 @@ const SEED = `
 2026-12-25;Torino;;;
 2026-12-26;Torino;;;
 2026-12-27;Torino;;;
-2026-12-28;Roma;milano;t:Termini-Centrale@;social:Compleanno Pino
+2026-12-28;Roma;milano;t:Termini-Centrale@;
 2026-12-29;Argentina;;f:FCO-EZE@18:15;leave_ok:Ferie
 2026-12-30;Argentina;;;leave_ok:Ferie
 2026-12-31;Argentina;;;leave_ok:Ferie
@@ -1043,6 +1051,46 @@ function saveData() {
 }
 
 let DATA = loadData();
+
+// ============================================================
+// YEARLY EVENTS (birthdays, anniversaries: anything that repeats every year)
+// Kept apart from the days as [{ md:'MM-DD', text, time }] in localStorage
+// (travelCalendarRecurring) and synced to travelCalendar/recurring. They show on
+// that date in EVERY year; a 29 Feb one shows on 28 Feb in non-leap years.
+// ============================================================
+const RECUR_KEY = 'travelCalendarRecurring';
+function normRecurring(r) {
+  return { md: (r && r.md) ? String(r.md) : '', text: (r && r.text) ? String(r.text) : '', time: (r && r.time) ? String(r.time) : '' };
+}
+function validRecurring(r) { return /^\d\d-\d\d$/.test(r.md) && !!r.text; }
+function getRecurring() {
+  try { const s = JSON.parse(localStorage.getItem(RECUR_KEY)); if (Array.isArray(s)) return s.map(normRecurring).filter(validRecurring); } catch (e) {}
+  return [];
+}
+function setRecurring(arr) {
+  const list = (Array.isArray(arr) ? arr : []).map(normRecurring).filter(validRecurring)
+    .sort((a, b) => a.md < b.md ? -1 : a.md > b.md ? 1 : a.text.localeCompare(b.text));
+  try { localStorage.setItem(RECUR_KEY, JSON.stringify(list)); } catch (e) {}
+}
+function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+// The MM-DD slots that land on a given day (28 Feb also carries 29 Feb in non-leap years).
+function recurringMds(key) {
+  const md = key.slice(5);
+  return (md === '02-28' && !isLeap(+key.slice(0, 4))) ? ['02-28', '02-29'] : [md];
+}
+function recurringFor(key) { const mds = recurringMds(key); return getRecurring().filter(r => mds.includes(r.md)); }
+// Replace the yearly events that land on `key` with `list` (each item keeps its own md).
+function setRecurringForKey(key, list) {
+  const mds = recurringMds(key);
+  setRecurring(getRecurring().filter(r => !mds.includes(r.md)).concat(list || []));
+}
+// Date key of the next time a MM-DD comes round (today counts).
+function nextOccurrenceKey(md) {
+  const keyIn = yr => `${yr}-${md === '02-29' && !isLeap(yr) ? '02-28' : md}`;
+  let y = new Date().getFullYear();
+  if (keyIn(y) < todayKey()) y++;
+  return keyIn(y);
+}
 
 // ============================================================
 // DATE HELPERS
@@ -1218,6 +1266,7 @@ function renderGrid(daysInMonth, tk) {
     let dots = '';
     (dy.travel || []).forEach(t => { if (t.from || t.to) dots += `<span class="gtrav ${legConfirmed(t, key) ? 'bk' : 'nb'}">${t.mode === 'f' ? '✈️' : '🚆'}${t.mode === 'f' && t.bag ? '🧳' : ''}</span>`; });
     (dy.events || []).forEach(e => { if (e.text) dots += `<span class="gdot" style="background:${eventDotColor()}"></span>`; });
+    recurringFor(key).forEach(() => { dots += `<span class="gdot" style="background:${eventDotColor()}"></span>`; });
 
     const carnetN = (dy.carnetOut ? 1 : 0) + (dy.carnetBack ? 1 : 0);
     // 🎫 per carnet ticket used; a Milano day set by hand (no carnet) shows MI.
@@ -1340,11 +1389,14 @@ function readLegRow(row) {
   const bagEl = row.querySelector('.bag-btn');
   return { mode: get('mode') || 't', from: get('from'), to: get('to'), time: get('time'), co: get('co'), ref: get('ref'), booked: bookEl ? bookEl.dataset.booked === '1' : false, bag: bagEl ? bagEl.dataset.bag === '1' : false };
 }
-function evRowHtml(e) {
+// `yearly` = the row is a yearly event (stored in the recurring list, not the day);
+// data-md keeps its own MM-DD so a 29 Feb birthday shown on 28 Feb is saved back as 29 Feb.
+function evRowHtml(e, yearly) {
   e = e || { cat: '', text: '', time: '' };
-  return `<div class="evrow">
+  return `<div class="evrow" data-yearly="${yearly ? '1' : '0'}" data-md="${yearly ? esc(e.md || '') : ''}">
       <input class="text-in evtime" data-f="time" inputmode="numeric" maxlength="5" placeholder="hh:mm" value="${esc(e.time || '')}">
       <input class="text-in evtext" data-f="text" placeholder="Appointment / event" value="${esc(e.text)}">
+      <button type="button" class="yearly-btn ${yearly ? 'on' : ''}" title="Repeat every year on this date">🔁</button>
       <button type="button" class="move-btn" title="Move to another day">📅</button>
       <input type="date" class="move-date" style="display:none" aria-label="Move to date">
       <button type="button" class="row-del" title="Remove">&times;</button>
@@ -1368,7 +1420,8 @@ function openDayEditor(key) {
   document.getElementById('dayTitle').textContent = `${DOW[dowOf(key)]} ${d} ${MONTHS[m - 1]} ${y}`;
 
   const legsHtml = dy.travel.map(legRowHtml).join('');
-  const evsHtml = dy.events.map(evRowHtml).join('');
+  // yearly events (birthdays) first, then this day's own events
+  const evsHtml = recurringFor(key).map(r => evRowHtml(r, true)).join('') + dy.events.map(e => evRowHtml(e)).join('');
 
   // Order: travel, events, flags, then "Where will I be?" at the bottom.
   document.getElementById('dayBody').innerHTML = `
@@ -1381,6 +1434,7 @@ function openDayEditor(key) {
       <div class="field-label">Events</div>
       <div id="evsList">${evsHtml}</div>
       <button type="button" class="add-btn" id="addEv">+ Add event</button>
+      <p class="mini-note">🔁 repeats the event on this date every year (birthdays).</p>
     </div>
     <div class="fieldcard">
       <div class="toggle-row">
@@ -1465,7 +1519,7 @@ function openDayEditor(key) {
   syncMilanoLock();
 
   document.getElementById('daySaveBtn').addEventListener('click', saveDayEditor);
-  dayEditorSnapshot = JSON.stringify(collectDayFromEditor());   // baseline for dirty-detection
+  dayEditorSnapshot = editorStateJson();   // baseline for dirty-detection
   document.getElementById('dayModal').classList.remove('hidden');
 }
 
@@ -1485,6 +1539,7 @@ function collectDayFromEditor() {
   });
   const events = [];
   body.querySelectorAll('.evrow').forEach(row => {
+    if (row.dataset.yearly === '1') return;          // yearly rows live in the recurring list
     const text = row.querySelector('[data-f="text"]').value.trim();
     const timeEl = row.querySelector('[data-f="time"]');
     const time = timeEl ? timeEl.value.trim() : '';
@@ -1492,9 +1547,27 @@ function collectDayFromEditor() {
   });
   return { loc, milano, marta, carnetOut, carnetBack, travel: legs, events };
 }
+// The yearly (🔁) event rows in the editor, as recurring items.
+function collectYearlyFromEditor() {
+  const out = [];
+  document.getElementById('dayBody').querySelectorAll('.evrow[data-yearly="1"]').forEach(row => {
+    const text = row.querySelector('[data-f="text"]').value.trim();
+    const timeEl = row.querySelector('[data-f="time"]');
+    if (text) out.push({ md: row.dataset.md || (editingKey || '').slice(5), text, time: timeEl ? timeEl.value.trim() : '' });
+  });
+  return out;
+}
+function editorStateJson() { return JSON.stringify([collectDayFromEditor(), collectYearlyFromEditor()]); }
+// Write this day's yearly rows back to the recurring list; sync only if it changed.
+function commitYearlyFromEditor(key) {
+  const before = JSON.stringify(getRecurring());
+  setRecurringForKey(key, collectYearlyFromEditor());
+  if (JSON.stringify(getRecurring()) !== before) cloudSyncRecurring();
+}
 
 function saveDayEditor() {
   DATA[editingKey] = collectDayFromEditor();
+  commitYearlyFromEditor(editingKey);
   saveData();
   cloudSyncDay(editingKey);
   closeDayModal();
@@ -1506,7 +1579,9 @@ function clearDay() {
   if (!editingKey) return;
   const key = editingKey;
   const [y, m, d] = key.split('-').map(Number);
-  if (!confirm(`Clear everything on ${d} ${MONTHS[m - 1]} ${y}?`)) return;
+  // Yearly events (birthdays) are not part of the day, so Clear leaves them alone.
+  const yearlyNote = recurringFor(key).length ? ' Yearly events stay.' : '';
+  if (!confirm(`Clear everything on ${d} ${MONTHS[m - 1]} ${y}?${yearlyNote}`)) return;
   DATA[key] = normalizeDay({});
   saveData();
   cloudSyncDay(key);
@@ -1518,7 +1593,7 @@ function closeDayModal() { document.getElementById('dayModal').classList.add('hi
 
 function dayEditorDirty() {
   if (dayEditorSnapshot === null) return false;
-  try { return JSON.stringify(collectDayFromEditor()) !== dayEditorSnapshot; } catch (e) { return false; }
+  try { return editorStateJson() !== dayEditorSnapshot; } catch (e) { return false; }
 }
 // Tapping the backdrop must never silently drop edits: if anything changed, ask
 // whether to save, discard, or keep editing.
@@ -1574,6 +1649,22 @@ function moveEvToDay(dateInput) {
   if (!text) { toast('Fill the event before moving'); return; }
   if (targetKey === editingKey) { toast('Already on this day'); return; }
   const [, tmm, tdd] = targetKey.split('-').map(Number);
+  // A yearly event moves its date for every year (only month + day matter).
+  if (row.dataset.yearly === '1') {
+    const newMd = targetKey.slice(5);
+    if (newMd === (row.dataset.md || editingKey.slice(5))) { toast('Already on this date every year'); return; }
+    if (!confirm(`Move "${text}" to ${tdd} ${MONTHS[tmm - 1]}, every year?`)) return;
+    row.remove();
+    DATA[editingKey] = collectDayFromEditor();
+    setRecurringForKey(editingKey, collectYearlyFromEditor());
+    setRecurring(getRecurring().concat([{ md: newMd, text, time }]));
+    saveData();
+    cloudSyncDay(editingKey);
+    cloudSyncRecurring();
+    renderMonth();
+    toast(`Moved to ${tdd} ${MONTHS[tmm - 1]} (every year)`);
+    return;
+  }
   if (!confirm(`Move "${text}" to ${tdd} ${MONTHS[tmm - 1]}?`)) return;
   const tgt = cloneDay(DATA[targetKey] || normalizeDay({}));
   tgt.events.push({ cat: '', text, time });
@@ -1899,7 +1990,8 @@ function shiftMonth(delta) {
 function catLabel(cat) { const c = EVENT_CATS.find(x => x.key === cat); return c ? c.label.replace(/^— | —$/g, '') : ''; }
 
 // Build the display lines + the lowercased haystack for one day.
-function daySearchDoc(key, dy) {
+// `recs` = yearly events to list on this day (search shows each one only at its next occurrence).
+function daySearchDoc(key, dy, recs) {
   const [y, m, d] = key.split('-').map(Number);
   const dow = DOW[dowOf(key)];
   const lines = [];       // shown under the result
@@ -1931,6 +2023,11 @@ function daySearchDoc(key, dy) {
     hay.push(e.text, lbl, e.cat, e.time);
   });
 
+  (recs || []).forEach(r => {
+    lines.push({ txt: `🔁 ${r.text}${r.time ? '  ' + r.time : ''}` });
+    hay.push(r.text, r.time, 'yearly every year annuale ricorrente');
+  });
+
   if (dy.marta) { hay.push('marta'); }
   if (dy.milano) { hay.push('milano commute carnet'); }
 
@@ -1946,10 +2043,15 @@ function runSearch(q) {
     return;
   }
   const hits = [];
-  Object.keys(DATA).sort().forEach(key => {
-    const dy = DATA[key];
-    if (!dy || isEmptyDay(dy)) return;
-    const doc = daySearchDoc(key, dy);
+  // yearly events are searched at their next occurrence (today or later), once each
+  const recByKey = {};
+  getRecurring().forEach(r => { const k = nextOccurrenceKey(r.md); (recByKey[k] = recByKey[k] || []).push(r); });
+  const keys = Array.from(new Set(Object.keys(DATA).concat(Object.keys(recByKey)))).sort();
+  keys.forEach(key => {
+    const dy = DATA[key] || normalizeDay({});
+    const recs = recByKey[key] || [];
+    if (isEmptyDay(dy) && !recs.length) return;
+    const doc = daySearchDoc(key, dy, recs);
     if (tokens.every(tok => doc.haystack.includes(tok))) hits.push(doc);
   });
   if (!hits.length) {
@@ -2068,6 +2170,12 @@ function cloudSyncDay(key) {
 function cloudSyncLocs() { if (window.fb && window.fb.ready) window.fb.setLocs(getLocs()); }
 function cloudSyncColors() { if (window.fb && window.fb.ready) window.fb.setColors(getColors()); }
 function cloudSyncCarnets() { if (window.fb && window.fb.ready) window.fb.setCarnets(getCarnets()); }
+function cloudSyncRecurring() { if (window.fb && window.fb.ready && window.fb.setRecurring) window.fb.setRecurring(getRecurring()); }
+// RTDB hands back an array, or an object if the numeric keys ever have gaps.
+function applyRemoteRecurring(v) {
+  setRecurring(Array.isArray(v) ? v : (v && typeof v === 'object') ? Object.values(v) : []);
+  renderMonth();
+}
 function applyRemoteCarnets(arr) {
   setCarnets(Array.isArray(arr) ? arr : []);
   renderCarnetCard();
@@ -2081,6 +2189,7 @@ window.onRemoteDays = applyRemoteDays;
 window.onRemoteLocs = applyRemoteLocs;
 window.onRemoteColors = applyRemoteColors;
 window.onRemoteCarnets = applyRemoteCarnets;
+window.onRemoteRecurring = applyRemoteRecurring;
 window.onSyncStatus = setSyncStatus;
 // local-customization getters used by the one-time migration (push local up if cloud empty)
 window.localLocsOverride = function () {
@@ -2088,6 +2197,7 @@ window.localLocsOverride = function () {
 };
 window.localColors = function () { return getColors(); };
 window.localCarnets = function () { const c = getCarnets(); return (Array.isArray(c) && c.length) ? c : null; };
+window.localRecurring = function () { const r = getRecurring(); return r.length ? r : null; };
 
 // ============================================================
 // INIT
@@ -2189,6 +2299,15 @@ document.getElementById('dayBody').addEventListener('click', e => {
     book.classList.toggle('booked', !on);
     book.classList.toggle('unbooked', on);
     book.textContent = on ? '✗ To buy' : '✓ Booked';
+    return;
+  }
+  const yr = e.target.closest('.yearly-btn');
+  if (yr) {
+    const row = yr.closest('.evrow');
+    const on = row.dataset.yearly === '1';
+    row.dataset.yearly = on ? '0' : '1';
+    if (!on && !row.dataset.md) row.dataset.md = (editingKey || '').slice(5);
+    yr.classList.toggle('on', !on);
     return;
   }
   const bag = e.target.closest('.bag-btn');
@@ -2305,6 +2424,7 @@ try {
     setLocs:   (a)    => set(ref(db, `${NODE}/locs`), a || []).catch(console.error),
     setColors: (o)    => set(ref(db, `${NODE}/colors`), o || {}).catch(console.error),
     setCarnets:(a)    => set(ref(db, `${NODE}/carnets`), a || []).catch(console.error),
+    setRecurring:(a)  => set(ref(db, `${NODE}/recurring`), a || []).catch(console.error),
     removeAll: ()     => remove(ref(db, NODE)).catch(console.error)
   };
 
@@ -2313,7 +2433,7 @@ try {
   // One-time migration per node: on the first snapshot, if the cloud node is
   // empty, push this device's local customizations up (so nothing is lost and
   // other devices receive them). After that, the cloud is the source of truth.
-  let daysInit = false, locsInit = false, colorsInit = false, carnetsInit = false;
+  let daysInit = false, locsInit = false, colorsInit = false, carnetsInit = false, recurringInit = false;
 
   onValue(ref(db, `${NODE}/days`), snap => {
     let remote = snap.val();
@@ -2362,6 +2482,19 @@ try {
       }
     }
     window.onRemoteCarnets && window.onRemoteCarnets(v);
+  });
+
+  // yearly events (birthdays): same one-time migration as carnets
+  onValue(ref(db, `${NODE}/recurring`), snap => {
+    const v = snap.val();
+    if (!recurringInit) {
+      recurringInit = true;
+      if (v === null) {
+        const r = window.localRecurring && window.localRecurring();
+        if (r) { window.fb.setRecurring(r); return; }
+      }
+    }
+    window.onRemoteRecurring && window.onRemoteRecurring(v);
   });
 } catch (e) {
   console.error("Calendar sync init failed:", e);
