@@ -24,15 +24,18 @@ The app ships its own icon (an inline SVG calendar), wired up at runtime as the 
 - **Colours** (🎨 in the header): pick a colour per **city** and per **event type**. **Torino** defaults to grey and **Milano commute** to a darker grey. The commute colour only tints days where you're based in Torino; on any other city the destination city's colour wins. Tap **Auto** to revert to default. Colour choices sync across devices.
 - **Each day card** shows: location badge, holiday badge (if any), `(Milano)` under the date when working in Milan, a pink Marta dot top-right, travel chips (✈️/🚆 with from → to and time, strong green = booked / strong red = to buy), and event chips colour-coded by type.
 - **Tap any day** (either view) to open the editor. It is ordered top to bottom: travel, events, flags, then location.
-  - **Flights / Trains** — add as many legs as you need (`+ Add flight / train`); each row has mode (train/flight), From, To, time, the **airline / train company** (free text, e.g. Trenitalia, Ryanair), a **booking reference** (flights only, a 6-char alphanumeric code, e.g. a PNR), a **booked toggle** (green ✓ Booked = already bought / red ✗ To buy = still to purchase), and a × to remove it. The company shows on the day's travel chip. An **upcoming flight** (today or later) only shows green when it is booked **and** has a valid 6-char reference; one that is missing the reference (every existing flight starts without one) is shown with the same **red** "to buy" colour coding until you add the code. **Past flights keep the simple rule** (booked = green, no reference required), so flights you have already taken are not flagged red. Trains ignore the reference.
+  - **Flights / Trains** — add as many legs as you need (`+ Add flight / train`); each row has mode (train/flight), From, To, time, the **airline / train company** (free text, e.g. Trenitalia, Ryanair),
+    - **Quick-pick chips.** Focusing From, To or Company shows a strip of suggestion chips right under the field (a new leg opens straight on the From chips). Tapping a chip fills the field and moves the strip to the next empty field (From → To → Company), so a usual trip takes three taps. **Flights:** airports `FCO`, `TRN`, `LIN`, `MXP`; airlines `ITA`, `Wizz`, `Ryanair`. **Trains:** stations `Susa`, `Termini`, `Centrale`, `Garibaldi`; companies `Italo`, `Trenitalia`. The To strip leaves out whatever is already in From. Free text is always allowed on top of the chips.
+    - **Airport codes are capitals only.** On a flight, From/To accept letters only, are forced to capitals while typing (`fco` → `FCO`) and stop at 3 characters; they are also stored in capitals. Switching a filled train row to Flight keeps a value that fits a code (1-3 letters, capitalised) and clears a station name; it also clears a company that belongs to the other mode's list (e.g. Italo on a flight). Train From/To stay free text. a **booking reference** (flights only, a 6-char alphanumeric code, e.g. a PNR), a **booked toggle** (green ✓ Booked = already bought / red ✗ To buy = still to purchase), and a × to remove it. The company shows on the day's travel chip. An **upcoming flight** (today or later) only shows green when it is booked **and** has a valid 6-char reference; one that is missing the reference (every existing flight starts without one) is shown with the same **red** "to buy" colour coding until you add the code. **Past flights keep the simple rule** (booked = green, no reference required), so flights you have already taken are not flagged red. Trains ignore the reference.
   - **Worked in Milano** — a standalone toggle. Set it on any day I worked in Milano even when no carnet ticket was used (I drove, someone gave me a lift, I bought a single ticket). It tints the day **dark grey** (the "Milano commute" colour) when I slept at home (Torino) or no city is set, shows **MI** in the grid cell, and feeds the **MI Milano** counter in the monthly summary. If the day already uses a carnet ticket the flag is **inferred**: the toggle switches itself on and locks (greyed out), so it can never contradict the carnet.
   - **Trenitalia carnet** — two toggles per day: **Carnet to Milano** (use a carnet ticket outbound) and **Carnet return** (use one for the trip back). A day using the carnet shows 🎫 per ticket in the grid cell (so `🎫🎫` for out + back). Each toggled trip counts as one ticket against the current carnet (see Carnet below) and implies "worked in Milano".
   - **Events** — add as many as you need (`+ Add event`), each with a text and a category colour (Work, Social, Appointment, Leave requested, Leave to request); × removes a row. Each row has a **🔁** toggle: switch it on (gold) to make the event **repeat on this date every year** (birthdays), see "Yearly events" below.
   - **Working in Milano** / **Marta** — toggles.
+  - **🏖️ Ferie** — toggle to mark the day as my own day off. It is drawn like a national holiday but in **teal** (`#12a594`): a teal bar along the top of the grid cell and a teal pill on the day number, plus a "Ferie" tooltip. A national holiday that is also a ferie day keeps the gold. The monthly summary adds a **🏖️ Ferie** counter of **working days off** (Mon-Fri, national holidays excluded), so it reads as leave actually used. Searching `ferie` / `vacanza` / `holiday` finds those days (tagged 🏖️ Ferie). Bulk edit has a matching **Ferie** set / remove / no change option for a range.
   - **Where will I be** — type a location or tap a quick city chip. Add new cities with the "Add a city" box; tap × on a chip to delete that city from the list.
   - **Save day**, or **Clear** (top-left) to empty the day. Clear leaves yearly (🔁) events alone; remove those with their × instead.
 - **Move a flight / train to another day**: in the day editor, every flight/train row has a **📅 Move** button. Tap it, pick the target date, and that leg jumps to the chosen day (it's removed from the current day and the current day is committed at the same time). Both days sync immediately.
-- **Bulk edit** (📋 **Bulk** in the header): apply the same change across a date range in one go. Pick a **from** and **to** date (defaults to the visible month), then set any of: **Worked in Milano** (set / remove / no change — "remove" also clears that day's carnet tickets, otherwise they would re-imply the flag), **Marta** (set / remove / no change), **Set location** (overwrite the location on every day in range, with city quick-chips), and **Add an event** (append the same event + category to every day). Tap **Apply to range**, or **Done** (top-right of the sheet), which also saves any pending changes before closing (previously **Done** discarded them, only **Apply to range** saved — fixed). **Clear range** (top-left of the sheet) empties every day in the range (asks for confirmation first). Anything left on "No change" / unchecked is skipped. All changes sync to every device.
+- **Bulk edit** (📋 **Bulk** in the header): apply the same change across a date range in one go. Pick a **from** and **to** date (defaults to the visible month), then set any of: **Worked in Milano** (set / remove / no change — "remove" also clears that day's carnet tickets, otherwise they would re-imply the flag), **Marta** (set / remove / no change), **🏖️ Ferie** (mark / remove / no change), **Set location** (overwrite the location on every day in range, with city quick-chips), and **Add an event** (append the same event + category to every day). Tap **Apply to range**, or **Done** (top-right of the sheet), which also saves any pending changes before closing (previously **Done** discarded them, only **Apply to range** saved — fixed). **Clear range** (top-left of the sheet) empties every day in the range (asks for confirmation first). Anything left on "No change" / unchecked is skipped. All changes sync to every device.
 - **Monthly summary** (compact card pinned to the **bottom**) auto-counts days per **sleep** location, plus **MI Milano** (days worked in Milano, whether set by hand or inferred from a carnet), **🎫 Tickets** (carnet tickets used that month) and **Marta** days. Each is shown only when non-zero.
 
 ## Yearly events (birthdays)
@@ -87,7 +90,7 @@ To change the **published default** baseline (what a brand-new device sees befor
 A single-file vanilla-JS app (`index.html`, no framework, no build). The published
 plan is baked into a compact `SEED` string; per-device edits are layered on top,
 synced to a **Firebase Realtime Database**, and cached in `localStorage`. Bump
-`VERSION` (top of the config `<script>`, currently `10`) on functional changes.
+`VERSION` (top of the config `<script>`, currently `11`) on functional changes.
 
 The file has 6 `<script>` blocks: (0) a head `<script>` that builds the app icon
 (favicon / apple-touch / data-URI manifest from an inline SVG), (1) a banner
@@ -98,7 +101,27 @@ scripts share one global lexical scope; the module talks to them only through
 
 ## Project state / where we left off (last session)
 
-- **Latest session (yearly events / birthdays, VERSION 10).**
+- **Latest session (travel quick-picks + ferie days, VERSION 11).**
+  1. **Suggestion chips on legs.** Lists in CONFIG: `FLIGHT_AIRPORTS`, `TRAIN_STATIONS`,
+     `AIRLINES`, `TRAIN_COS`. One `.sugg` strip per leg (`data-for` = `from`|`to`|`co`),
+     built by `showLegSugg(row, field)` / `hideLegSugg(scope)` / `refreshLegSugg(row)`;
+     options from `legSuggOptions(row, field)` (mode-aware, To excludes the From value).
+     A delegated `focusin` on `dayBody` shows the strip for From/To/Company and hides it
+     when another text input gets focus (buttons and the mode select don't count). A chip
+     click fills the field and jumps to the next empty one; `mousedown` on chips is
+     prevented so desktop focus stays in the input. The strip is placed under its field
+     with flex `order` on the `.leg` children (CSS block "quick-pick suggestions").
+  2. **Airport codes in capitals.** `cleanAirport(v)` (A-Z only, max 3) runs on every
+     `input` in a flight's From/To; `legPlaceAttrs(isFlight, label)` sets `maxlength=3`,
+     `autocapitalize=characters` and the `.code` style; `applyLegMode(row)` re-applies the
+     rules on a mode change (keeps 1-3 letter values in capitals, clears station names, and
+     clears a company from the other mode's list). `readLegRow` stores flight From/To in capitals.
+  3. **Ferie flag.** New `ferie` boolean on the day (SEED flag `ferie`), in `parseSeed`,
+     `normalizeDay`, `isEmptyDay`, `collectDayFromEditor` (`#edFerie` toggle), bulk
+     (`#bulkFerie` tri-state), the grid (`.gcell.ferie` + tooltip), the summary (working-day
+     counter) and search. Existing "Ferie (...)" text events were NOT converted to the flag.
+
+- **Previous session (yearly events / birthdays, VERSION 10).**
   1. **New `recurring` list** of yearly events `{ md:'MM-DD', text, time }`, kept apart
      from the days (localStorage `travelCalendarRecurring`, RTDB `travelCalendar/recurring`).
      Helpers in the DATA MODEL script: `getRecurring`/`setRecurring` (sorted by md),
@@ -319,6 +342,11 @@ movable Easter/Pasquetta hardcoded for 2026. `holidayName(key)` looks up by the
 number + tooltip in Grid). To support a different year's Easter, add the right
 `MM-DD` entries (or switch to full-date keys).
 
+**My own days off (ferie)** are a per-day flag (`dy.ferie`), not part of `IT_HOLIDAYS`.
+They reuse the holiday look in teal: `.gcell.ferie` (top inset bar + teal `.gnum` pill);
+`.gcell.holiday.ferie` falls back to gold. `renderSummary` counts ferie only on Mon-Fri
+days that are not a national holiday.
+
 ## Data model
 
 A day object:
@@ -328,6 +356,7 @@ A day object:
   loc: 'Torino',            // free text: the city where I SLEEP that night ('' = unset)
   milano: false,            // worked in Milano that day (own flag; any carnet ticket forces it true)
   marta: false,             // Marta is with me
+  ferie: false,             // my own day off (teal, drawn like a national holiday)
   carnetOut: false,         // uses a Trenitalia carnet ticket to Milano (outbound)
   carnetBack: false,        // uses a Trenitalia carnet ticket on the way back
   travel: [ { mode:'f'|'t', from:'FCO', to:'PMO', time:'18:00', co:'Ryanair', ref:'AB12CD', booked:false } ], // any number of legs
@@ -355,7 +384,7 @@ One line per day, `;`-separated:
 date ; loc ; flags ; travel ; events
 ```
 
-- **flags** — comma list from `{milano, marta, cout, cback}` (`milano` = worked in Milano, `cout` = carnet to Milano, `cback` = carnet return). `cout`/`cback` imply `milano`; `parseSeed` reads the `milano` flag on its own too (it used to ignore it and derive Milano purely from the carnet flags, which silently dropped every Milano day in the seed).
+- **flags** — comma list from `{milano, marta, ferie, cout, cback}` (`milano` = worked in Milano, `ferie` = my day off, `cout` = carnet to Milano, `cback` = carnet return). `cout`/`cback` imply `milano`; `parseSeed` reads the `milano` flag on its own too (it used to ignore it and derive Milano purely from the carnet flags, which silently dropped every Milano day in the seed).
 - **travel** — legs joined by `|`, each `mode:FROM-TO@TIME` (time optional; keep the `@`, e.g. `f:FCO-MAD@`). Route is split on the first `-`. A booked (already bought) leg adds `!` to the mode: `f!:FCO-OLB@16:00` (booked) vs `f:FCO-OLB@16:00` (to buy). Legs default to "to buy" (red). An optional company is appended after a `#`, e.g. `f:FCO-OLB@16:00#Ryanair`. An optional flight booking reference (6-char alphanumeric) is appended last after a `~`, e.g. `f!:FCO-OLB@16:00#Ryanair~AB12CD`. An upcoming flight stays red until it is booked AND has a valid `~ref` (so existing seed flights, which have none, show red); past flights stay green when booked even without a ref.
 - **events** — slots joined by `|`, each `cat:text`. Split on the first `:`, so times like `18:30` in the text are fine (`appt:Parrucchiere 18:30`).
 
@@ -382,6 +411,8 @@ through 2026-12-31** (214 days). Add months by appending lines.
 - **Add a location quick chip**: edit `KNOWN_LOCS` (the seed defaults) and optionally `LOC_COLORS`. At runtime the city list is editable in-app and stored in `localStorage` under `travelCalendarLocs` (`getLocs`/`setLocs`/`addLoc`/`removeLoc`); it falls back to `KNOWN_LOCS`.
 - **Add an event category**: add to `EVENT_CATS`, give it a default colour in `EV_COLORS_DEFAULT`, and a short label in `LEG_SHORT` (the editor legend). It is then editable in the 🎨 modal automatically.
 - **Add/adjust a holiday**: edit `IT_HOLIDAYS` (`MM-DD` → label).
+- **Change the travel quick-picks**: edit `FLIGHT_AIRPORTS`, `TRAIN_STATIONS`, `AIRLINES`, `TRAIN_COS` in CONFIG (chip order = array order).
+- **Mark days off**: 🏖️ Ferie toggle in the day editor, or Bulk edit → Ferie for a range.
 - **Yearly events (birthdays)**: toggled per event row with 🔁 (`.yearly-btn`); stored in `travelCalendar/recurring` via `getRecurring`/`setRecurring`/`cloudSyncRecurring`, never in the day objects or the SEED. To bulk-load birthdays, write the array straight to the RTDB node (`{md:'MM-DD', text, time}`).
 - **Events / travel legs**: unlimited. Rows are added via the `+ Add` buttons (`legRowHtml`/`evRowHtml`) and removed via the `.row-del` × (delegated on `dayBody`). `collectDayFromEditor()` reads every `.leg` / `.evrow` in the DOM. A leg can be moved to another day with its **📅 Move** button (`moveLegToDay`).
 - **Bulk-edit a range**: 📋 **Bulk** in the header (`openBulk`/`applyBulk`); set Marta / Milano / location / an event across a from–to range, or **Clear range**.
