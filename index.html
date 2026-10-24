@@ -529,6 +529,20 @@ body {
           <span class="bulk-arrow">→</span>
           <input type="date" class="text-in" id="bulkTo">
         </div>
+        <div class="field-label" style="margin-top:10px;">Only these weekdays</div>
+        <div class="quick-chips" id="bulkWeekdays">
+          <span class="quick-chip active" data-wd="1">Mon</span>
+          <span class="quick-chip active" data-wd="2">Tue</span>
+          <span class="quick-chip active" data-wd="3">Wed</span>
+          <span class="quick-chip active" data-wd="4">Thu</span>
+          <span class="quick-chip active" data-wd="5">Fri</span>
+          <span class="quick-chip active" data-wd="6">Sat</span>
+          <span class="quick-chip active" data-wd="0">Sun</span>
+        </div>
+        <div class="toggle-row" style="margin-top:8px;">
+          <div><div class="tl-label">Skip holidays &amp; ferie</div><div class="tl-sub">Leave national holidays and 🏖️ days alone</div></div>
+          <label class="switch"><input type="checkbox" id="bulkSkipOff"><span class="slider"></span></label>
+        </div>
       </div>
       <div class="fieldcard">
         <div class="field-label">Worked in Milano</div>
@@ -1820,6 +1834,9 @@ function openBulk() {
   document.getElementById('bulkAddEv').checked = false;
   document.getElementById('bulkEvText').value = '';
   document.getElementById('bulkEvTime').value = '';
+  // Weekday filter resets to "every day" each time the sheet opens.
+  document.querySelectorAll('#bulkWeekdays .quick-chip').forEach(c => c.classList.add('active'));
+  document.getElementById('bulkSkipOff').checked = false;
   renderBulkChips('');
   document.getElementById('bulkModal').classList.remove('hidden');
 }
@@ -1846,7 +1863,17 @@ function applyBulk(clearMode, opts) {
   let b = document.getElementById('bulkTo').value;
   if (!a || !b) { if (!silent) toast('Pick both dates'); return; }
   if (a > b) { const t = a; a = b; b = t; }
-  const keys = dateRangeKeys(a, b);
+  // Weekday filter (0 = Sun ... 6 = Sat) and optional skip of holidays / ferie days.
+  const wds = new Set([...document.querySelectorAll('#bulkWeekdays .quick-chip.active')].map(c => Number(c.dataset.wd)));
+  if (!wds.size) { if (!silent) toast('Pick at least one weekday'); return; }
+  const skipOff = document.getElementById('bulkSkipOff').checked;
+  const keys = dateRangeKeys(a, b).filter(key => {
+    const [y, m, d] = key.split('-').map(Number);
+    if (!wds.has(new Date(y, m - 1, d).getDay())) return false;
+    if (skipOff && (holidayName(key) || (DATA[key] && DATA[key].ferie))) return false;
+    return true;
+  });
+  if (!keys.length) { if (!silent) toast('No days match'); return; }
 
   if (clearMode) {
     if (!confirm(`Empty all ${keys.length} day(s) from ${a} to ${b}?`)) return;
@@ -2395,6 +2422,10 @@ document.getElementById('daySave').addEventListener('click', saveDayEditor);
 // bulk edit sheet
 document.getElementById('bulkClose').addEventListener('click', closeBulk);
 document.getElementById('bulkApply').addEventListener('click', () => applyBulk(false));
+document.getElementById('bulkWeekdays').addEventListener('click', e => {
+  const chip = e.target.closest('.quick-chip');
+  if (chip) chip.classList.toggle('active');
+});
 document.getElementById('bulkClear').addEventListener('click', () => applyBulk(true));
 document.getElementById('bulkLoc').addEventListener('input', () => {
   document.getElementById('bulkSetLoc').checked = true;
