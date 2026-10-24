@@ -706,13 +706,30 @@ const EVENT_CATS = [
 // movable ones (Easter / Easter Monday) are filled in for 2026.
 const IT_HOLIDAYS = {
   '01-01': 'Capodanno', '01-06': 'Epifania',
-  '04-05': 'Pasqua', '04-06': "Lunedì dell'Angelo",
   '04-25': 'Festa della Liberazione', '05-01': 'Festa del Lavoro',
   '06-02': 'Festa della Repubblica', '08-15': 'Ferragosto',
-  '11-01': 'Ognissanti', '12-08': 'Immacolata',
+  '11-01': 'Ognissanti',
+  '12-07': "Sant'Ambrogio", // Milano patron saint: office closed, so treated as a holiday
+  '12-08': 'Immacolata',
   '12-25': 'Natale', '12-26': 'Santo Stefano'
 };
-function holidayName(key) { return IT_HOLIDAYS[key.slice(5)] || null; }
+// Easter moves every year (Gregorian computus); returns {MM-DD: name} for that year.
+const _easterCache = {};
+function easterHolidays(y) {
+  if (_easterCache[y]) return _easterCache[y];
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  const sun = new Date(y, month - 1, day), mon = new Date(y, month - 1, day + 1);
+  const md = dt => String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+  return (_easterCache[y] = { [md(sun)]: 'Pasqua', [md(mon)]: "Lunedì dell'Angelo" });
+}
+function holidayName(key) {
+  const md = key.slice(5);
+  return IT_HOLIDAYS[md] || easterHolidays(Number(key.slice(0, 4)))[md] || null;
+}
 
 // Editable event-category colours. This is the chip background; the chip text,
 // the editor swatch and the grid dot are all derived from it.
