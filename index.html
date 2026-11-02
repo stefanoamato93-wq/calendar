@@ -2642,7 +2642,7 @@ renderMonth();
      ============================================================ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, onValue, set, update, remove }
+import { getDatabase, ref, onValue, set, update, remove, get }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 const firebaseConfig = {
@@ -2701,25 +2701,75 @@ try {
   var daysLoaded = false, recurLoaded = false, links = null;
   const TASK_LIST = "Start of Day";
   const hash = s => { let h = 5381; for (const c of s) h = ((h << 5) + h + c.codePointAt(0)) | 0; return (h >>> 0).toString(36); };
+  // Edits are mirrored too: calLinks/<id> = { date, h (hash of the event text), due }.
+  // Per day (birthdays: per MM-DD) the events are matched to their linked tasks by
+  // text; a renamed event takes over a leftover task, a changed time moves the
+  // task's due, and a deleted event deletes its task (kept if already completed).
+  // A task you deleted in the tasks app is never brought back.
+  const pending = new Set();
+  const dueOf = (date, time) => {
+    const m = (time || "").match(/^(\d{1,2})[:.](\d{2})$/);
+    return m && +m[1] < 24 && +m[2] < 60 ? date + "T" + m[1].padStart(2, "0") + ":" + m[2] : date;
+  };
+  const linkInfo = (id, v) => {
+    const o = v && typeof v === "object" ? v : { date: v };   // older links: just the date
+    return { id, date: o.date, h: o.h || id.split("_").pop(), due: o.due };
+  };
+  function reconcile(want, have, prefix, bday, upd, jobs) {
+    for (const key of new Set([...Object.keys(want), ...Object.keys(have)])) {
+      const W = (want[key] || []).map(w => ({ ...w, h: hash(w.text.toLowerCase()) }));
+      const H = (have[key] || []).slice();
+      const restW = [];
+      for (const w of W) {
+        const i = H.findIndex(L => L.h === w.h);
+        if (i < 0) { restW.push(w); continue; }
+        const L = H.splice(i, 1)[0];
+        if (!bday && L.due !== w.due) jobs.push({ id: L.id, set: { due: w.due }, link: { date: key, h: w.h, due: w.due } });
+      }
+      for (const w of restW) {
+        const L = H.shift();
+        if (L) { jobs.push({ id: L.id, set: bday ? { title: w.text } : { title: w.text, due: w.due }, link: { date: key, h: w.h, due: w.due } }); continue; }
+        const id = prefix + key + "_" + w.h;
+        if (links[id] || upd["calLinks/" + id]) continue;
+        upd["tasks/" + id] = { title: w.text, done: false, list: TASK_LIST, due: w.due, notes: "", source: "calendar", created: Date.now(),
+          ...(bday ? { repeat: { every: 1, freq: "year" } } : {}) };
+        upd["calLinks/" + id] = { date: key, h: w.h, due: w.due };
+      }
+      for (const L of H) jobs.push({ id: L.id, remove: true });
+    }
+  }
+  function runJob(j) {
+    if (pending.has(j.id)) return;
+    pending.add(j.id);
+    get(ref(db, "taskApp/tasks/" + j.id)).then(s => {
+      const x = s.val(), u = {};
+      if (j.remove) { u["calLinks/" + j.id] = null; if (x && !x.done) u["tasks/" + j.id] = null; }
+      else {
+        u["calLinks/" + j.id] = j.link;
+        if (x) for (const f in j.set) u["tasks/" + j.id + "/" + f] = j.set[f];
+      }
+      return update(ref(db, "taskApp"), u);
+    }).catch(console.error).finally(() => pending.delete(j.id));
+  }
   function syncTasks() {
     if (!daysLoaded || !links || !window.calEventsForTasks) return;
-    const upd = {};
-    for (const ev of window.calEventsForTasks()) {
-      const id = "cal_" + ev.date + "_" + hash(ev.text.toLowerCase());
-      if (links[id] || upd["calLinks/" + id]) continue;
-      const m = ev.time.match(/^(\d{1,2})[:.](\d{2})$/);
-      const due = m && +m[1] < 24 && +m[2] < 60 ? ev.date + "T" + m[1].padStart(2, "0") + ":" + m[2] : ev.date;
-      upd["tasks/" + id] = { title: ev.text, done: false, list: TASK_LIST, due, notes: "", source: "calendar", created: Date.now() };
-      upd["calLinks/" + id] = ev.date;
+    const today = window.todayKey(), upd = {}, jobs = [];
+    const want = {}, have = {};
+    for (const ev of window.calEventsForTasks()) (want[ev.date] = want[ev.date] || []).push({ text: ev.text, due: dueOf(ev.date, ev.time) });
+    for (const id in links) if (id.startsWith("cal_")) {
+      const L = linkInfo(id, links[id]);
+      if (L.date >= today) (have[L.date] = have[L.date] || []).push(L);
     }
+    reconcile(want, have, "cal_", false, upd, jobs);
     // Birthdays: one task per birthday that repeats every year, due on the next one.
-    if (recurLoaded && window.calBirthdaysForTasks) for (const b of window.calBirthdaysForTasks()) {
-      const id = "bday_" + b.md + "_" + hash(b.text.toLowerCase());
-      if (links[id] || upd["calLinks/" + id]) continue;
-      upd["tasks/" + id] = { title: b.text, done: false, list: TASK_LIST, due: b.date, notes: "", source: "calendar", repeat: { every: 1, freq: "year" }, created: Date.now() };
-      upd["calLinks/" + id] = b.md;
+    if (recurLoaded && window.calBirthdaysForTasks) {
+      const bw = {}, bh = {};
+      for (const b of window.calBirthdaysForTasks()) (bw[b.md] = bw[b.md] || []).push({ text: b.text, due: b.date });
+      for (const id in links) if (id.startsWith("bday_")) { const L = linkInfo(id, links[id]); (bh[L.date] = bh[L.date] || []).push(L); }
+      reconcile(bw, bh, "bday_", true, upd, jobs);
     }
     if (Object.keys(upd).length) update(ref(db, "taskApp"), upd).catch(console.error);
+    jobs.forEach(runJob);
   }
   onValue(ref(db, "taskApp/calLinks"), snap => { links = snap.val() || {}; syncTasks(); });
 
