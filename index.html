@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Calendar">
 <meta name="theme-color" content="#007aff">
-<title>Travel Calendar</title>
+<title>Travel Calendar v1</title>
 <script>
 // App icon (self-contained). Builds an inline SVG calendar icon and wires it up
 // as the favicon (Chrome tab + Chrome "Install app"), the apple-touch-icon, and a
@@ -363,12 +363,14 @@ body {
 .gcell.holiday.ferie { box-shadow: inset 0 3px 0 #e0a800, 0 1px 1px rgba(0,0,0,0.04); }
 .gcell.holiday.ferie:not(.today) .gnum { background: #e0a800; }
 
-/* 45-degree stripes on holidays and ferie days, in each one's colour */
+/* 45-degree stripes on holidays and ferie days, in each one's colour.
+   !important: the cell's inline location colour uses the background shorthand,
+   which would otherwise wipe the stripes. */
 .gcell.ferie, .day.ferie {
-  background-image: repeating-linear-gradient(45deg, rgba(18,165,148,0.20) 0 6px, transparent 6px 12px);
+  background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.13) 0 5px, transparent 5px 10px) !important;
 }
 .gcell.holiday, .day.holiday, .gcell.holiday.ferie {
-  background-image: repeating-linear-gradient(45deg, rgba(224,168,0,0.22) 0 6px, transparent 6px 12px);
+  background-image: repeating-linear-gradient(45deg, rgba(224,168,0,0.35) 0 5px, transparent 5px 10px) !important;
 }
 
 /* quick-pick suggestions under a leg field (airports, stations, companies).
@@ -487,7 +489,7 @@ body {
 
 <div class="header">
   <div class="header-top">
-    <h1>📅 Calendar <span class="dot" id="statusDot" title="Sync status"></span></h1>
+    <h1>📅 Calendar <span style="font-size:12px;font-weight:600;opacity:.55;">v1</span> <span class="dot" id="statusDot" title="Sync status"></span></h1>
     <div class="month-nav">
       <button id="prevMonth">‹</button>
       <span class="month-label" id="monthLabel">—</span>
