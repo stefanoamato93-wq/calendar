@@ -77,6 +77,10 @@ The plan syncs automatically to a Firebase Realtime Database, so the same data s
 
 How it works: the baked-in `SEED` is the baseline; only the days you change from it (and any cities you add) are stored in the cloud under a `travelCalendar` node. `localStorage` is kept as an instant-load / offline cache. On the first ever run the app migrates whatever edits the device already had up to the cloud.
 
+## Tasks app link
+
+Every event dated today or later becomes one task in the tasks app (`taskApp/tasks`), list **Start of Day**, due on the event's date (with its time when the event has an `HH:MM` time). Task ids are `cal_<date>_<hash of text>`. `taskApp/calLinks/<id>` records that the event already got its task, so completing or deleting the task never brings it back, and renaming an event creates a new task. The sync runs in the calendar's Firebase module (`syncTasks`) on every days snapshot, so it covers new events on any device and the backlog on first open. Yearly events (`recurring`) and travel legs are not synced.
+
 ## Changing the published defaults
 
 To change the **published default** baseline (what a brand-new device sees before the cloud loads), send an exported JSON to Kiro and ask to update the `SEED` in `index.html`, then re-upload the file. The cloud overrides still win once they load; the SEED is only the baseline for untouched days.

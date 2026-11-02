@@ -2365,6 +2365,18 @@ window.localLocsOverride = function () {
 window.localColors = function () { return getColors(); };
 window.localCarnets = function () { const c = getCarnets(); return (Array.isArray(c) && c.length) ? c : null; };
 window.localRecurring = function () { const r = getRecurring(); return r.length ? r : null; };
+// Events from today on, for the tasks app (each one becomes a "Start of Day" task).
+window.calEventsForTasks = function () {
+  const t = todayKey(), out = [];
+  Object.keys(DATA).forEach(k => {
+    if (k < t) return;
+    (DATA[k].events || []).forEach(e => {
+      const text = (e && e.text || '').trim();
+      if (text) out.push({ date: k, text, time: (e.time || '').trim() });
+    });
+  });
+  return out;
+};
 
 // ============================================================
 // INIT
@@ -2674,7 +2686,30 @@ try {
       }
     }
     window.onRemoteDays && window.onRemoteDays(remote || {});
+    daysLoaded = true;
+    syncTasks();
   });
+
+  // Tasks app link: every calendar event from today on gets one task in the
+  // "Start of Day" list. taskApp/calLinks remembers which events already got a
+  // task, so a task you complete or delete is never created again.
+  var daysLoaded = false, links = null;
+  const TASK_LIST = "Start of Day";
+  const hash = s => { let h = 5381; for (const c of s) h = ((h << 5) + h + c.codePointAt(0)) | 0; return (h >>> 0).toString(36); };
+  function syncTasks() {
+    if (!daysLoaded || !links || !window.calEventsForTasks) return;
+    const upd = {};
+    for (const ev of window.calEventsForTasks()) {
+      const id = "cal_" + ev.date + "_" + hash(ev.text.toLowerCase());
+      if (links[id] || upd["calLinks/" + id]) continue;
+      const m = ev.time.match(/^(\d{1,2})[:.](\d{2})$/);
+      const due = m && +m[1] < 24 && +m[2] < 60 ? ev.date + "T" + m[1].padStart(2, "0") + ":" + m[2] : ev.date;
+      upd["tasks/" + id] = { title: ev.text, done: false, list: TASK_LIST, due, notes: "", source: "calendar", created: Date.now() };
+      upd["calLinks/" + id] = ev.date;
+    }
+    if (Object.keys(upd).length) update(ref(db, "taskApp"), upd).catch(console.error);
+  }
+  onValue(ref(db, "taskApp/calLinks"), snap => { links = snap.val() || {}; syncTasks(); });
 
   onValue(ref(db, `${NODE}/locs`), snap => {
     const v = snap.val();
