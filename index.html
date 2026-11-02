@@ -2377,6 +2377,11 @@ window.calEventsForTasks = function () {
   });
   return out;
 };
+// Yearly events (birthdays) with their next date, for the tasks app.
+window.calBirthdaysForTasks = function () {
+  return getRecurring().filter(r => (r.text || '').trim())
+    .map(r => ({ md: r.md, text: r.text.trim(), date: nextOccurrenceKey(r.md) }));
+};
 
 // ============================================================
 // INIT
@@ -2693,7 +2698,7 @@ try {
   // Tasks app link: every calendar event from today on gets one task in the
   // "Start of Day" list. taskApp/calLinks remembers which events already got a
   // task, so a task you complete or delete is never created again.
-  var daysLoaded = false, links = null;
+  var daysLoaded = false, recurLoaded = false, links = null;
   const TASK_LIST = "Start of Day";
   const hash = s => { let h = 5381; for (const c of s) h = ((h << 5) + h + c.codePointAt(0)) | 0; return (h >>> 0).toString(36); };
   function syncTasks() {
@@ -2706,6 +2711,13 @@ try {
       const due = m && +m[1] < 24 && +m[2] < 60 ? ev.date + "T" + m[1].padStart(2, "0") + ":" + m[2] : ev.date;
       upd["tasks/" + id] = { title: ev.text, done: false, list: TASK_LIST, due, notes: "", source: "calendar", created: Date.now() };
       upd["calLinks/" + id] = ev.date;
+    }
+    // Birthdays: one task per birthday that repeats every year, due on the next one.
+    if (recurLoaded && window.calBirthdaysForTasks) for (const b of window.calBirthdaysForTasks()) {
+      const id = "bday_" + b.md + "_" + hash(b.text.toLowerCase());
+      if (links[id] || upd["calLinks/" + id]) continue;
+      upd["tasks/" + id] = { title: b.text, done: false, list: TASK_LIST, due: b.date, notes: "", source: "calendar", repeat: { every: 1, freq: "year" }, created: Date.now() };
+      upd["calLinks/" + id] = b.md;
     }
     if (Object.keys(upd).length) update(ref(db, "taskApp"), upd).catch(console.error);
   }
@@ -2758,6 +2770,8 @@ try {
       }
     }
     window.onRemoteRecurring && window.onRemoteRecurring(v);
+    recurLoaded = true;
+    syncTasks();
   });
 } catch (e) {
   console.error("Calendar sync init failed:", e);
