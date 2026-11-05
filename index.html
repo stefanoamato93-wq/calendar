@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Calendar">
 <meta name="theme-color" content="#007aff">
-<title>Travel Calendar v1.03</title>
+<title>Travel Calendar v1.04</title>
 <script>
 // App icon (self-contained). Builds an inline SVG calendar icon and wires it up
 // as the favicon (Chrome tab + Chrome "Install app"), the apple-touch-icon, and a
@@ -383,10 +383,14 @@ body {
 .leg > .move-date { order: 95; }
 .leg > .row-del { order: 100; }
 /* Wide screens: the whole leg on ONE line, ✕ last. Fields shrink to fit.
-   The suggestion strip (while typing) still gets its own line. */
+   The suggestion strip floats under the row, so the boxes never move. */
 @media (min-width: 481px) {
   .leg { flex-wrap: nowrap; }
-  .leg:has(> .sugg) { flex-wrap: wrap; }
+  .leg > .sugg {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 20; margin: 4px 0 0;
+    padding: 8px; border-radius: 10px; background: var(--card);
+    border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  }
   .leg .text-in, .leg select { min-width: 0; }
   .leg .from, .leg .to, .leg .co { flex: 1 1 0; min-width: 0; }
   .leg .time { width: 64px; flex-shrink: 0; }
@@ -505,7 +509,7 @@ body {
 
 <div class="header">
   <div class="header-top">
-    <h1>📅 Calendar <span id="appVer" style="font-size:12px;font-weight:600;opacity:.55;">v1.03</span> <span class="dot" id="statusDot" title="Sync status"></span></h1>
+    <h1>📅 Calendar <span id="appVer" style="font-size:12px;font-weight:600;opacity:.55;">v1.04</span> <span class="dot" id="statusDot" title="Sync status"></span></h1>
     <div class="month-nav">
       <button id="prevMonth">‹</button>
       <span class="month-label" id="monthLabel">—</span>
@@ -693,7 +697,7 @@ body {
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 11;          // saved-data format, NOT the app version
 // App version shown next to the title (also in <title> and #appVer). +0.01 on every live update.
-const APP_VER = '1.03';
+const APP_VER = '1.04';
 // Only the month grid view remains (the old agenda/list view was dropped).
 let viewMode = 'grid';
 
