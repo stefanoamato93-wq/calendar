@@ -367,10 +367,10 @@ body {
    !important: the cell's inline location colour uses the background shorthand,
    which would otherwise wipe the stripes. */
 .gcell.ferie, .day.ferie {
-  background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.13) 0 5px, transparent 5px 10px) !important;
+  background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.13) 0 5px, transparent 5px 10px), var(--grad, none) !important;
 }
 .gcell.holiday, .day.holiday, .gcell.holiday.ferie {
-  background-image: repeating-linear-gradient(45deg, rgba(224,168,0,0.35) 0 5px, transparent 5px 10px) !important;
+  background-image: repeating-linear-gradient(45deg, rgba(224,168,0,0.35) 0 5px, transparent 5px 10px), var(--grad, none) !important;
 }
 
 /* quick-pick suggestions under a leg field (airports, stations, companies).
@@ -378,7 +378,9 @@ body {
 .leg > .mode { order: 10; } .leg > .from { order: 20; } .leg > .to { order: 30; }
 .leg > .time { order: 40; } .leg > .co { order: 50; } .leg > .ref { order: 60; }
 .leg > .book-btn { order: 70; } .leg > .bag-btn { order: 80; } .leg > .move-btn { order: 90; }
-.leg > .move-date { order: 95; } .leg > .row-del { order: 100; }
+.leg > .move-date { order: 95; }
+/* the ✕ sits on the first line, right after From/To, so it never wraps alone */
+.leg > .row-del { order: 31; }
 .leg > .sugg { order: 35; flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 0 2px; }
 .leg > .sugg[data-for="co"] { order: 55; }
 .sugg-chip {
@@ -681,6 +683,9 @@ let viewMode = 'grid';
 
 // Known locations (quick-pick chips in the editor). Free text always allowed.
 const KNOWN_LOCS = ['Torino','Milano','Roma','Palermo','Olbia','Madrid','Eraclea','Marsala','Favignana'];
+// Sleeping in one of these cities means I'm with Marta (Marta flag set automatically).
+const MARTA_CITIES = ['roma', 'palermo'];
+function martaCity(loc) { return MARTA_CITIES.includes(String(loc || '').trim().toLowerCase()); }
 
 // Quick-pick suggestions in a flight/train row (free text is always allowed).
 // Flight From/To only take a 3-letter airport code in capitals.
@@ -1062,7 +1067,7 @@ function parseSeed(text) {
       // "milano" = worked in Milano that day. Set explicitly with the `milano`
       // flag, or inferred from a carnet ticket (cout/cback).
       milano: flags.includes('milano') || flags.includes('cout') || flags.includes('cback'),
-      marta: flags.includes('marta'),
+      marta: flags.includes('marta') || martaCity(loc),
       ferie: flags.includes('ferie'),
       carnetOut: flags.includes('cout'),
       carnetBack: flags.includes('cback'),
@@ -1097,7 +1102,7 @@ function normalizeDay(d) {
   return {
     loc: d.loc || '',
     milano: !!d.milano || carnetOut || carnetBack,
-    marta: !!d.marta,
+    marta: !!d.marta || martaCity(d.loc),
     ferie: !!d.ferie,
     carnetOut: carnetOut,
     carnetBack: carnetBack,
@@ -1359,7 +1364,17 @@ function renderGrid(daysInMonth, tk) {
     const martaDot = dy.marta ? `<span class="marta-dot" title="Marta"></span>` : '';
 
     const dc = dayColor(dy);
-    const style = dc ? `background:${dc.bg};color:${dc.fg};` : '';
+    let style = dc ? `background:${dc.bg};color:${dc.fg};` : '';
+    // Changed the place I sleep: fade from last night's city colour to tonight's.
+    const prevDy = DATA[addDaysKey(key, -1)];
+    if (dc && dy.loc && prevDy && prevDy.loc && prevDy.loc.trim().toLowerCase() !== dy.loc.trim().toLowerCase()) {
+      const pc = dayColor(prevDy);
+      if (pc && pc.bg !== dc.bg) {
+        const grad = `linear-gradient(135deg, ${pc.bg} 15%, ${dc.bg} 85%)`;
+        style = `background:${grad};--grad:${grad};color:${dc.fg};`;
+        classes.push('move');
+      }
+    }
     const tip = [hol, dy.ferie ? 'Ferie' : ''].filter(Boolean).join(' · ');
     const cellTitle = tip ? ` title="${esc(tip)}"` : '';
     html += `<div class="${classes.join(' ')}" data-key="${key}" style="${style}"${cellTitle}>
@@ -1628,7 +1643,10 @@ function openDayEditor(key) {
 
   const locChipsEl = document.getElementById('locChips');
   const edLoc = document.getElementById('edLoc');
-  function refreshChips() { locChipsEl.innerHTML = locChipsHtml(edLoc.value.trim()); }
+  function refreshChips() {
+    locChipsEl.innerHTML = locChipsHtml(edLoc.value.trim());
+    if (martaCity(edLoc.value)) document.getElementById('edMarta').checked = true;
+  }
 
   // select a city / delete a city (event-delegated, chips re-render after delete)
   locChipsEl.addEventListener('click', e => {
