@@ -720,7 +720,7 @@ body {
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 11;          // saved-data format, NOT the app version
 // App version shown next to the title (also in <title> and #appVer). +0.01 on every live update.
-const APP_VER = '1.06';
+const APP_VER = '1.07';
 // Only the month grid view remains (the old agenda/list view was dropped).
 let viewMode = 'grid';
 
@@ -1480,7 +1480,7 @@ function renderSummary(daysInMonth) {
     html += `<span class="tally" title="Carnet tickets used this month"><span class="t-name">🎫 Tickets</span><span class="t-count" style="color:inherit;">${carnetTickets}</span></span>`;
   }
   if (martaDays) {
-    html += `<span class="tally" title="Days with Marta"><span class="t-name">Marta</span><span class="t-count" style="color:inherit;">${martaDays}</span></span>`;
+    html += `<span class="tally" title="Days with Marta" style="background:#ffd6e7;color:#a81b5a;"><span class="t-name">Marta</span><span class="t-count" style="color:inherit;">${martaDays}</span></span>`;
   }
   if (ferieDays) {
     html += `<span class="tally ferie" title="Ferie days this month (Mon-Fri, national holidays excluded)"><span class="t-name">🏖️ Ferie</span><span class="t-count" style="color:inherit;">${ferieDays}</span></span>`;
