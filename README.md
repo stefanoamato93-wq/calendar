@@ -65,6 +65,13 @@ Two refinements that make a **future-dated** carnet behave correctly:
 - **"Current" = the most recent carnet bought on or before today.** A carnet you record with a future purchase date is **upcoming**, not current: it no longer hijacks the card (which used to show it with 0 used and a full "tickets left", while the booklet actually in your pocket was pushed into history). It still counts only the tickets from its own start date onwards, and the carnet in use keeps its own count until that date. If every recorded carnet is in the future, the nearest one is shown and labelled "Next carnet (not started yet)".
 - **Used-so-far vs planned.** The headline count and the progress bar are **tickets up to today**; commutes you have already flagged on future days are reported separately as "N more already planned" (with the eventual `used/size` in the manager), so a month of planned trips no longer makes the booklet look spent.
 
+**30-day expiry and buy plan (v1.10).** A carnet is valid for `CARNET_VALID_DAYS` = 30 days from its purchase day (last valid day = date + 29); tickets flagged after that no longer count against it, and the card shows "valid to …" (or a red **expired**). `carnetForecast()` walks every 🎫 ticket flagged from the last recorded carnet onwards and "buys" a new carnet on the first ticket it cannot cover (all tickets used, or past its 30 days), then repeats for the rest of the plan. Results:
+- the card gets a **🛒 buy next by …** line (green, amber within 7 days, red if the date has passed; "No new carnet needed" when the plan is covered);
+- the manager has a **🛒 Plan from flagged days** box: one row per carnet in the chain (last recorded, then Buy #1, #2 …) with tickets covered and how it ends (all used by …, N unused at expiry, or N left after the plan);
+- each planned buy day shows **🛒** in its calendar cell.
+
+Planned carnets use the size of the last recorded one. They are only a forecast: record the real purchase under **New carnet bought** as usual.
+
 Everything (toggles, leg company, carnet records) is stored in the database and synced across devices.
 
 ## Backup / Sync

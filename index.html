@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Calendar">
 <meta name="theme-color" content="#007aff">
-<title>Travel Calendar v1.09</title>
+<title>Travel Calendar v1.10</title>
 <script>
 // App icon (self-contained). Builds an inline SVG calendar icon and wires it up
 // as the favicon (Chrome tab + Chrome "Install app"), the apple-touch-icon, and a
@@ -450,6 +450,12 @@ body {
 .cc-left.ok { background: #d6f0db; color: #1c5a23; }
 .cc-left.warn { background: #ffe8c2; color: #8a5300; }
 .cc-left.bad { background: #ffd6d2; color: #8a1810; }
+.cc-buy { font-size: 12.5px; font-weight: 700; margin-top: 4px; }
+.cc-buy.ok { color: #1c5a23; }
+.cc-buy.warn { color: #8a5300; }
+.cc-buy.bad { color: #8a1810; }
+.carnet-row.planned .carnet-row-top { color: var(--primary); }
+.gbuy { font-size: 10px; line-height: 1; }
 
 /* carnet progress bar */
 .carnet-bar { height: 7px; background: var(--input-bg); border-radius: 5px; overflow: hidden; margin: 6px 0 0; }
@@ -519,7 +525,7 @@ body {
 
 <div class="header">
   <div class="header-top">
-    <h1>📅 Calendar <span id="appVer" style="font-size:12px;font-weight:600;opacity:.55;">v1.09</span> <span class="dot" id="statusDot" title="Sync status"></span></h1>
+    <h1>📅 Calendar <span id="appVer" style="font-size:12px;font-weight:600;opacity:.55;">v1.10</span> <span class="dot" id="statusDot" title="Sync status"></span></h1>
     <div class="month-nav">
       <button id="prevMonth">‹</button>
       <span class="month-label" id="monthLabel">—</span>
@@ -730,7 +736,7 @@ body {
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 11;          // saved-data format, NOT the app version
 // App version shown next to the title (also in <title> and #appVer). +0.01 on every live update.
-const APP_VER = '1.09';
+const APP_VER = '1.10';
 // Keep the title and the header label in step with APP_VER, so one bump is enough.
 document.title = 'Travel Calendar v' + APP_VER;
 { const av = document.getElementById('appVer'); if (av) av.textContent = 'v' + APP_VER; }
@@ -1396,6 +1402,8 @@ function renderGrid(daysInMonth, tk) {
   const firstDow = new Date(viewYear, viewMonth, 1).getDay();
   const lead = (firstDow + 6) % 7;
   for (let i = 0; i < lead; i++) html += '<div class="gcell out"></div>';
+  // days on which the forecast says to buy a new carnet (🛒 in the cell)
+  const buyDays = new Set(carnetForecast().books.filter(b => b.planned).map(b => b.date));
 
   for (let d = 1; d <= daysInMonth; d++) {
     const key = ymd(viewYear, viewMonth, d);
@@ -1417,7 +1425,8 @@ function renderGrid(daysInMonth, tk) {
 
     const carnetN = (dy.carnetOut ? 1 : 0) + (dy.carnetBack ? 1 : 0);
     // 🎫 per carnet ticket used; a Milano day set by hand (no carnet) shows MI.
-    const flags = carnetN ? '🎫'.repeat(carnetN) : (dy.milano ? 'MI' : '');
+    const flags = (buyDays.has(key) ? '<span class="gbuy" title="Buy a new carnet">🛒</span>' : '') +
+                  (carnetN ? '🎫'.repeat(carnetN) : (dy.milano ? 'MI' : ''));
     const martaDot = dy.marta ? `<span class="marta-dot" title="Marta"></span>` : '';
 
     const dc = dayColor(dy);
@@ -2167,6 +2176,11 @@ function minKey(a, b) { if (!a) return b; if (!b) return a; return a < b ? a : b
 // is the part still ahead, so a future trip already flagged does not read as spent.
 // The CURRENT carnet is the most recent one bought on or before today (a
 // future-dated carnet is "upcoming", not current).
+// A carnet is valid for 30 days from its purchase day (last valid day = date + 29).
+// Tickets flagged after that are not counted against it.
+const CARNET_VALID_DAYS = 30;
+function carnetEndKey(date) { return addDaysKey(date, CARNET_VALID_DAYS); }      // first day NOT valid
+function carnetLastDay(date) { return addDaysKey(date, CARNET_VALID_DAYS - 1); } // last valid day
 function carnetStats() {
   const cs = sortedCarnets();
   const today = todayKey();
@@ -2175,7 +2189,7 @@ function carnetStats() {
   cs.forEach((c, i) => { if (c.date <= today) activeIdx = i; });
   if (activeIdx < 0 && cs.length) activeIdx = 0;   // all in the future: show the nearest
   return cs.map((c, i) => {
-    const next = cs[i + 1] ? cs[i + 1].date : null;
+    const next = minKey(cs[i + 1] ? cs[i + 1].date : null, carnetEndKey(c.date));
     const used = countCarnetTickets(c.date, next);
     const usedToDate = countCarnetTickets(c.date, minKey(next, tomorrow));
     return Object.assign({}, c, {
@@ -2183,9 +2197,41 @@ function carnetStats() {
       remaining: c.size - used,
       remainingToDate: c.size - usedToDate,
       future: c.date > today,
+      expires: carnetLastDay(c.date),
+      expired: carnetEndKey(c.date) <= today,
       isCurrent: i === activeIdx
     });
   });
+}
+// Forecast from the flagged days: start with the last recorded carnet, walk every
+// flagged ticket from its date on, and "buy" a new carnet on the first ticket it
+// cannot cover (all 10 used, or past its 30 days). Returns every carnet in the
+// chain (recorded one first, then planned ones) with what it covers and wastes.
+function carnetForecast() {
+  const cs = sortedCarnets();
+  const today = todayKey();
+  const last = cs.length ? cs[cs.length - 1] : null;
+  const size = last ? last.size : CARNET_DEFAULT_SIZE;
+  const from = last ? last.date : today;
+  const tickets = [];
+  Object.keys(DATA).filter(k => k >= from).sort().forEach(k => {
+    const dy = DATA[k]; if (!dy) return;
+    if (dy.carnetOut) tickets.push(k);
+    if (dy.carnetBack) tickets.push(k);
+  });
+  const mk = (date, sz, planned) => ({ date, size: sz, left: sz, end: carnetEndKey(date), lastDay: carnetLastDay(date), planned, covered: 0, lastUse: null, reason: '' });
+  const books = [];
+  let cur = last ? mk(last.date, last.size, false) : null;
+  if (cur) books.push(cur);
+  tickets.forEach(k => {
+    if (!cur || cur.left <= 0 || k >= cur.end) {
+      if (cur) cur.reason = cur.left <= 0 ? 'used' : 'expired';
+      cur = mk(k, size, true);
+      books.push(cur);
+    }
+    cur.left--; cur.covered++; cur.lastUse = k;
+  });
+  return { books, nextBuy: books.find(b => b.planned) || null, today };
 }
 function currentCarnet() { const s = carnetStats(); return s.find(c => c.isCurrent) || null; }
 function upcomingCarnet() { const s = carnetStats(); return s.find(c => c.future && !c.isCurrent) || null; }
@@ -2222,17 +2268,31 @@ function renderCarnetCard() {
   const nxt = upcomingCarnet();
   const sub = [
     cur.future ? `starts ${fmtDateShort(cur.date)}` : `since ${fmtDateShort(cur.date)}`,
+    cur.expired ? `expired ${fmtDateShort(cur.expires)}` : `valid to ${fmtDateShort(cur.expires)}`,
     cur.planned ? `${cur.planned} more already planned` : '',
     nxt ? `next carnet from ${fmtDateShort(nxt.date)}` : ''
   ].filter(Boolean).join(' · ');
+  const leftHtml = cur.expired
+    ? `<span class="cc-left bad">expired</span>`
+    : `<span class="cc-left ${leftClass(cur.remainingToDate)}">${leftLabel(cur.remainingToDate)}</span>`;
   el.innerHTML =
     `<span class="cc-icon">🎫</span>` +
     `<div class="cc-main">` +
-      `<div class="cc-line"><b>${esc(cur.company)}</b> · ${cur.usedToDate}/${cur.size} used ` +
-        `<span class="cc-left ${leftClass(cur.remainingToDate)}">${leftLabel(cur.remainingToDate)}</span></div>` +
+      `<div class="cc-line"><b>${esc(cur.company)}</b> · ${cur.usedToDate}/${cur.size} used ${leftHtml}</div>` +
       carnetBar(cur.usedToDate, cur.size) +
       `<div class="cc-sub">${sub}</div>` +
+      carnetBuyLine() +
     `</div>`;
+}
+// "🛒 Buy next by …" line from the forecast (card + manager)
+function carnetBuyLine() {
+  const f = carnetForecast();
+  const b = f.nextBuy;
+  if (!b) return `<div class="cc-buy ok">🛒 No new carnet needed for the days planned</div>`;
+  const cls = b.date < f.today ? 'bad' : b.date <= addDaysKey(f.today, 7) ? 'warn' : 'ok';
+  const when = b.date < f.today ? `was needed on ${fmtDateShort(b.date)}`
+             : b.date === f.today ? 'buy one today' : `buy next by ${fmtDateShort(b.date)}`;
+  return `<div class="cc-buy ${cls}">🛒 ${when}</div>`;
 }
 
 // full carnet manager (modal body)
@@ -2252,6 +2312,23 @@ function renderCarnet() {
     </div>`;
   } else {
     html += `<div class="fieldcard"><p class="mini-note" style="margin:0;">No carnet recorded yet. Add the booklet you bought below, then flag the commute days that use it.</p></div>`;
+  }
+  // Plan: when to buy, from the flagged days
+  {
+    const f = carnetForecast();
+    html += `<div class="fieldcard"><div class="field-label">🛒 Plan from flagged days</div>${carnetBuyLine()}`;
+    f.books.forEach((b, i) => {
+      const head = b.planned ? `Buy #${f.books.filter((x, j) => x.planned && j <= i).length} on ${fmtDateShort(b.date)}`
+                             : `Last carnet, ${fmtDateShort(b.date)}`;
+      const ends = b.reason === 'used' ? `all ${b.size} used by ${fmtDateShort(b.lastUse)}`
+                 : b.reason === 'expired' ? `${b.left} unused, expires ${fmtDateShort(b.lastDay)}`
+                 : `${b.left} left after plan, valid to ${fmtDateShort(b.lastDay)}`;
+      html += `<div class="carnet-row${b.planned ? ' planned' : ''}"><div class="carnet-row-main">
+        <div class="carnet-row-top">${b.planned ? '🛒 ' : '🎫 '}<b>${head}</b></div>
+        <div class="carnet-row-sub">covers ${b.covered} ticket${b.covered === 1 ? '' : 's'} · ${ends}</div>
+      </div></div>`;
+    });
+    html += `<p class="mini-note" style="margin-bottom:0;">Built from the 🎫 days in the calendar. Each carnet lasts ${CARNET_VALID_DAYS} days and holds ${CARNET_DEFAULT_SIZE} tickets. 🛒 marks buy days on the calendar.</p></div>`;
   }
   html += `<div class="fieldcard">
     <div class="field-label">New carnet bought</div>
