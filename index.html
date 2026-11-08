@@ -280,6 +280,28 @@ body {
 .bulk-range { display: flex; align-items: center; gap: 8px; }
 .bulk-range .text-in { flex: 1; }
 .bulk-arrow { font-size: 18px; color: var(--secondary); flex-shrink: 0; }
+/* bulk pick mode: tap days on the calendar to select them */
+.gcell.picked::after {
+  content: '✓'; position: absolute; inset: 0; border: 3px solid var(--primary); border-radius: 7px;
+  background: rgba(0,122,255,0.22); color: var(--primary); font-weight: 800; font-size: 14px;
+  display: flex; align-items: flex-end; justify-content: flex-end; padding: 1px 4px;
+  pointer-events: none; z-index: 2;
+}
+.pick-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 2500; background: #1c1c1e; color: #fff; border-radius: 16px; padding: 7px;
+  display: flex; align-items: center; gap: 6px; box-shadow: 0 6px 24px rgba(0,0,0,0.3);
+  max-width: calc(100% - 16px);
+}
+.pick-bar.hidden { display: none; }
+.pick-bar .pk-count { font-size: 14px; font-weight: 700; padding: 0 6px; white-space: nowrap; }
+.pick-bar button { border: none; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.pick-bar .pk-cancel { background: none; color: #ff6961; }
+.pick-bar .pk-range { background: #3a3a3c; color: #fff; }
+.pick-bar .pk-next { background: var(--primary); color: #fff; }
+.pick-bar .pk-next:disabled { opacity: .4; }
+.picked-list { font-size: 14px; line-height: 1.45; }
+.picked-change { background: none; border: none; color: var(--primary); font-size: 14px; font-weight: 600; padding: 6px 0 0; cursor: pointer; }
 .add-btn {
   background: var(--input-bg); border: 1px dashed var(--border); color: var(--primary);
   font-size: 14px; font-weight: 600; padding: 10px 12px; border-radius: 10px;
@@ -507,7 +529,7 @@ body {
   <div class="header-tools">
     <button id="btnToday">Today</button>
     <button id="btnSearch" title="Search events, flights, trains">🔍</button>
-    <button id="btnBulk" title="Bulk edit a date range">📋 Bulk</button>
+    <button id="btnBulk" title="Bulk edit: tap days or pick a date range">📋 Bulk</button>
     <button id="btnCarnet" title="Trenitalia carnet">🎫</button>
     <button id="btnColors" title="Edit colours">🎨</button>
   </div>
@@ -517,6 +539,14 @@ body {
   <div id="calendar"></div>
   <div class="carnet-card" id="carnetCard"></div>
   <div class="summary-card compact" id="summaryCard"></div>
+</div>
+
+<!-- BULK PICK BAR: shown while tapping days on the calendar -->
+<div class="pick-bar hidden" id="pickBar">
+  <button class="pk-cancel" id="pickCancel">Cancel</button>
+  <span class="pk-count" id="pickCount">Tap days</span>
+  <button class="pk-range" id="pickRange">From → to</button>
+  <button class="pk-next" id="pickNext" disabled>Edit</button>
 </div>
 
 <!-- DAY EDITOR -->
@@ -540,7 +570,12 @@ body {
       <button id="bulkClose">Done</button>
     </div>
     <div class="modal-body">
-      <div class="fieldcard">
+      <div class="fieldcard" id="bulkPickedBox" style="display:none;">
+        <div class="field-label" id="bulkPickedLabel">Picked days</div>
+        <div class="picked-list" id="bulkPickedList"></div>
+        <button class="picked-change" id="bulkPickedChange">✎ Change days</button>
+      </div>
+      <div class="fieldcard" id="bulkRangeBox">
         <div class="field-label">Date range</div>
         <div class="bulk-range">
           <input type="date" class="text-in" id="bulkFrom">
@@ -685,7 +720,7 @@ body {
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 11;          // saved-data format, NOT the app version
 // App version shown next to the title (also in <title> and #appVer). +0.01 on every live update.
-const APP_VER = '1.05';
+const APP_VER = '1.06';
 // Only the month grid view remains (the old agenda/list view was dropped).
 let viewMode = 'grid';
 
@@ -1357,6 +1392,7 @@ function renderGrid(daysInMonth, tk) {
     const hol = holidayName(key);
     const classes = ['gcell'];
     if (key === tk) classes.push('today');
+    if (pickMode && pickedDays.has(key)) classes.push('picked');
     if (hol) classes.push('holiday');
     if (dy.ferie) classes.push('ferie');
     if (weekend && !dy.loc) classes.push('wknd');
@@ -1403,7 +1439,7 @@ function renderGrid(daysInMonth, tk) {
 
   cal.innerHTML = html;
   cal.querySelectorAll('.gcell[data-key]').forEach(el => {
-    el.addEventListener('click', () => openDayEditor(el.dataset.key));
+    el.addEventListener('click', () => { if (pickMode) togglePick(el); else openDayEditor(el.dataset.key); });
   });
 }
 
@@ -1878,7 +1914,60 @@ function bulkLocChipsHtml(selected) {
 }
 function renderBulkChips(sel) { document.getElementById('bulkLocChips').innerHTML = bulkLocChipsHtml(sel); }
 
-function openBulk() {
+// ---- Bulk pick mode: the Bulk button lets you tap days on the calendar,
+// or jump to the From -> to range sheet.
+// var (not let/const): renderGrid may read these before this line runs at boot.
+var pickMode = false;
+var pickedDays = new Set();
+var bulkPickedKeys = null; // set when the bulk sheet works on picked days, not a range
+
+function startPick(keepSelection) {
+  if (!keepSelection) pickedDays.clear();
+  pickMode = true;
+  document.getElementById('pickBar').classList.remove('hidden');
+  renderMonth();
+  updatePickBar();
+}
+function endPick(clearSelection) {
+  pickMode = false;
+  if (clearSelection) pickedDays.clear();
+  document.getElementById('pickBar').classList.add('hidden');
+  renderMonth();
+}
+function togglePick(el) {
+  const key = el.dataset.key;
+  if (pickedDays.has(key)) pickedDays.delete(key); else pickedDays.add(key);
+  el.classList.toggle('picked', pickedDays.has(key));
+  updatePickBar();
+}
+function updatePickBar() {
+  const n = pickedDays.size;
+  document.getElementById('pickCount').textContent = n ? `${n} day${n === 1 ? '' : 's'}` : 'Tap days';
+  document.getElementById('pickNext').disabled = !n;
+}
+// "3, 5, 7 Nov · 2 Dec 2027": days grouped by month, year shown when not this year.
+function pickedSummary(keys) {
+  const groups = [];
+  keys.forEach(k => {
+    const [y, m, d] = k.split('-').map(Number);
+    const last = groups[groups.length - 1];
+    if (last && last.y === y && last.m === m) last.d.push(d); else groups.push({ y, m, d: [d] });
+  });
+  const thisYear = new Date().getFullYear();
+  return groups.map(g => `${g.d.join(', ')} ${MONTHS[g.m - 1]}${g.y !== thisYear ? ' ' + g.y : ''}`).join(' · ');
+}
+
+function openBulk(pickedKeys) {
+  bulkPickedKeys = (pickedKeys && pickedKeys.length) ? pickedKeys : null;
+  const n = bulkPickedKeys ? bulkPickedKeys.length : 0;
+  document.getElementById('bulkPickedBox').style.display = bulkPickedKeys ? '' : 'none';
+  document.getElementById('bulkRangeBox').style.display = bulkPickedKeys ? 'none' : '';
+  if (bulkPickedKeys) {
+    document.getElementById('bulkPickedLabel').textContent = `${n} picked day${n === 1 ? '' : 's'}`;
+    document.getElementById('bulkPickedList').textContent = pickedSummary(bulkPickedKeys);
+  }
+  document.getElementById('bulkApply').textContent = bulkPickedKeys ? `Apply to ${n} day${n === 1 ? '' : 's'}` : 'Apply to range';
+  document.getElementById('bulkClear').textContent = bulkPickedKeys ? 'Clear days' : 'Clear range';
   const dim = new Date(viewYear, viewMonth + 1, 0).getDate();
   document.getElementById('bulkFrom').value = ymd(viewYear, viewMonth, 1);
   document.getElementById('bulkTo').value = ymd(viewYear, viewMonth, dim);
@@ -1915,24 +2004,32 @@ function dateRangeKeys(a, b) {
 
 function applyBulk(clearMode, opts) {
   const silent = !!(opts && opts.silent);
-  let a = document.getElementById('bulkFrom').value;
-  let b = document.getElementById('bulkTo').value;
-  if (!a || !b) { if (!silent) toast('Pick both dates'); return; }
-  if (a > b) { const t = a; a = b; b = t; }
-  // Weekday filter (0 = Sun ... 6 = Sat) and optional skip of holidays / ferie days.
-  const wds = new Set([...document.querySelectorAll('#bulkWeekdays .quick-chip.active')].map(c => Number(c.dataset.wd)));
-  if (!wds.size) { if (!silent) toast('Pick at least one weekday'); return; }
-  const skipOff = document.getElementById('bulkSkipOff').checked;
-  const keys = dateRangeKeys(a, b).filter(key => {
-    const [y, m, d] = key.split('-').map(Number);
-    if (!wds.has(new Date(y, m - 1, d).getDay())) return false;
-    if (skipOff && (holidayName(key) || (DATA[key] && DATA[key].ferie))) return false;
-    return true;
-  });
+  let keys, what;
+  if (bulkPickedKeys) {
+    // Days tapped on the calendar: use exactly those, no weekday / holiday filter.
+    keys = bulkPickedKeys.slice();
+    what = pickedSummary(keys);
+  } else {
+    let a = document.getElementById('bulkFrom').value;
+    let b = document.getElementById('bulkTo').value;
+    if (!a || !b) { if (!silent) toast('Pick both dates'); return; }
+    if (a > b) { const t = a; a = b; b = t; }
+    // Weekday filter (0 = Sun ... 6 = Sat) and optional skip of holidays / ferie days.
+    const wds = new Set([...document.querySelectorAll('#bulkWeekdays .quick-chip.active')].map(c => Number(c.dataset.wd)));
+    if (!wds.size) { if (!silent) toast('Pick at least one weekday'); return; }
+    const skipOff = document.getElementById('bulkSkipOff').checked;
+    keys = dateRangeKeys(a, b).filter(key => {
+      const [y, m, d] = key.split('-').map(Number);
+      if (!wds.has(new Date(y, m - 1, d).getDay())) return false;
+      if (skipOff && (holidayName(key) || (DATA[key] && DATA[key].ferie))) return false;
+      return true;
+    });
+    what = `from ${a} to ${b}`;
+  }
   if (!keys.length) { if (!silent) toast('No days match'); return; }
 
   if (clearMode) {
-    if (!confirm(`Empty all ${keys.length} day(s) from ${a} to ${b}?`)) return;
+    if (!confirm(`Empty all ${keys.length} day(s): ${what}?`)) return;
     keys.forEach(key => { DATA[key] = normalizeDay({}); });
   } else {
     const marta = document.getElementById('bulkMarta').value;
@@ -1959,6 +2056,8 @@ function applyBulk(clearMode, opts) {
   }
   saveData();
   if (window.fb && window.fb.ready) window.fb.setDays(collectOverrides());
+  // Picked days are done: drop the selection so the next Bulk starts fresh.
+  if (bulkPickedKeys) { pickedDays.clear(); bulkPickedKeys = null; }
   renderMonth();
   hideBulkModal();
   if (!silent) toast(`Updated ${keys.length} day${keys.length === 1 ? '' : 's'}`);
@@ -2428,7 +2527,17 @@ window.calBirthdaysForTasks = function () {
 document.getElementById('prevMonth').addEventListener('click', () => shiftMonth(-1));
 document.getElementById('nextMonth').addEventListener('click', () => shiftMonth(1));
 document.getElementById('btnToday').addEventListener('click', gotoToday);
-document.getElementById('btnBulk').addEventListener('click', openBulk);
+document.getElementById('btnBulk').addEventListener('click', () => { if (pickMode) endPick(true); else startPick(false); });
+document.getElementById('pickCancel').addEventListener('click', () => endPick(true));
+document.getElementById('pickRange').addEventListener('click', () => { endPick(true); openBulk(null); });
+document.getElementById('pickNext').addEventListener('click', () => {
+  if (!pickedDays.size) return;
+  const keys = [...pickedDays].sort();
+  endPick(false);
+  openBulk(keys);
+});
+document.getElementById('bulkPickedChange').addEventListener('click', () => { hideBulkModal(); startPick(true); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && pickMode) endPick(true); });
 document.getElementById('btnColors').addEventListener('click', openColors);
 document.getElementById('colorsClose').addEventListener('click', closeColors);
 document.getElementById('btnSearch').addEventListener('click', openSearch);
