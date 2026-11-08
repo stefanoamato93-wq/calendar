@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Calendar">
 <meta name="theme-color" content="#007aff">
-<title>Travel Calendar v1.08</title>
+<title>Travel Calendar v1.09</title>
 <script>
 // App icon (self-contained). Builds an inline SVG calendar icon and wires it up
 // as the favicon (Chrome tab + Chrome "Install app"), the apple-touch-icon, and a
@@ -519,7 +519,7 @@ body {
 
 <div class="header">
   <div class="header-top">
-    <h1>📅 Calendar <span id="appVer" style="font-size:12px;font-weight:600;opacity:.55;">v1.08</span> <span class="dot" id="statusDot" title="Sync status"></span></h1>
+    <h1>📅 Calendar <span id="appVer" style="font-size:12px;font-weight:600;opacity:.55;">v1.09</span> <span class="dot" id="statusDot" title="Sync status"></span></h1>
     <div class="month-nav">
       <button id="prevMonth">‹</button>
       <span class="month-label" id="monthLabel">—</span>
@@ -603,6 +603,16 @@ body {
           <option value="">No change</option>
           <option value="on">Set Milano</option>
           <option value="off">Remove Milano</option>
+        </select>
+      </div>
+      <div class="fieldcard">
+        <div class="field-label">🎫 Carnet tickets</div>
+        <select class="text-in" id="bulkCarnet">
+          <option value="">No change</option>
+          <option value="both">Both ways (2 tickets)</option>
+          <option value="out">To Milano only</option>
+          <option value="back">Return only</option>
+          <option value="off">Remove tickets</option>
         </select>
       </div>
       <div class="fieldcard">
@@ -720,7 +730,7 @@ body {
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 11;          // saved-data format, NOT the app version
 // App version shown next to the title (also in <title> and #appVer). +0.01 on every live update.
-const APP_VER = '1.08';
+const APP_VER = '1.09';
 // Keep the title and the header label in step with APP_VER, so one bump is enough.
 document.title = 'Travel Calendar v' + APP_VER;
 { const av = document.getElementById('appVer'); if (av) av.textContent = 'v' + APP_VER; }
@@ -1975,6 +1985,7 @@ function openBulk(pickedKeys) {
   document.getElementById('bulkFrom').value = ymd(viewYear, viewMonth, 1);
   document.getElementById('bulkTo').value = ymd(viewYear, viewMonth, dim);
   document.getElementById('bulkMarta').value = '';
+  document.getElementById('bulkCarnet').value = '';
   document.getElementById('bulkFerie').value = '';
   document.getElementById('bulkMilano').value = '';
   document.getElementById('bulkSetLoc').checked = false;
@@ -2036,6 +2047,7 @@ function applyBulk(clearMode, opts) {
     keys.forEach(key => { DATA[key] = normalizeDay({}); });
   } else {
     const marta = document.getElementById('bulkMarta').value;
+    const carnet = document.getElementById('bulkCarnet').value;
     const ferie = document.getElementById('bulkFerie').value;
     const milano = document.getElementById('bulkMilano').value;
     const setLoc = document.getElementById('bulkSetLoc').checked;
@@ -2044,7 +2056,7 @@ function applyBulk(clearMode, opts) {
     const evText = document.getElementById('bulkEvText').value.trim();
     const evTime = document.getElementById('bulkEvTime').value.trim();
     // Silent auto-save on "Done" has nothing to do if no option was changed; skip quietly.
-    if (!marta && !ferie && !milano && !setLoc && !(addEv && evText)) { if (!silent) toast('Nothing to apply'); return; }
+    if (!marta && !carnet && !ferie && !milano && !setLoc && !(addEv && evText)) { if (!silent) toast('Nothing to apply'); return; }
     keys.forEach(key => {
       const dy = cloneDay(DATA[key] || normalizeDay({}));
       if (marta) dy.marta = (marta === 'on');
@@ -2052,6 +2064,11 @@ function applyBulk(clearMode, opts) {
       if (milano === 'on') dy.milano = true;
       // Removing Milano also drops the carnet tickets, otherwise they'd re-imply it.
       if (milano === 'off') { dy.milano = false; dy.carnetOut = false; dy.carnetBack = false; }
+      // A carnet ticket also marks the day as Milano (normalizeDay does that).
+      if (carnet === 'both') { dy.carnetOut = true; dy.carnetBack = true; }
+      if (carnet === 'out') { dy.carnetOut = true; dy.carnetBack = false; }
+      if (carnet === 'back') { dy.carnetOut = false; dy.carnetBack = true; }
+      if (carnet === 'off') { dy.carnetOut = false; dy.carnetBack = false; }
       if (setLoc) dy.loc = loc;
       if (addEv && evText) dy.events.push({ cat: '', text: evText, time: evTime });
       DATA[key] = normalizeDay(dy);
