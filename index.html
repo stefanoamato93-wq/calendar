@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Calendar">
 <meta name="theme-color" content="#007aff">
-<title>Travel Calendar v1.05</title>
+<title>Travel Calendar v1.08</title>
 <script>
 // App icon (self-contained). Builds an inline SVG calendar icon and wires it up
 // as the favicon (Chrome tab + Chrome "Install app"), the apple-touch-icon, and a
@@ -519,7 +519,7 @@ body {
 
 <div class="header">
   <div class="header-top">
-    <h1>📅 Calendar <span id="appVer" style="font-size:12px;font-weight:600;opacity:.55;">v1.05</span> <span class="dot" id="statusDot" title="Sync status"></span></h1>
+    <h1>📅 Calendar <span id="appVer" style="font-size:12px;font-weight:600;opacity:.55;">v1.08</span> <span class="dot" id="statusDot" title="Sync status"></span></h1>
     <div class="month-nav">
       <button id="prevMonth">‹</button>
       <span class="month-label" id="monthLabel">—</span>
@@ -720,7 +720,10 @@ body {
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 11;          // saved-data format, NOT the app version
 // App version shown next to the title (also in <title> and #appVer). +0.01 on every live update.
-const APP_VER = '1.07';
+const APP_VER = '1.08';
+// Keep the title and the header label in step with APP_VER, so one bump is enough.
+document.title = 'Travel Calendar v' + APP_VER;
+{ const av = document.getElementById('appVer'); if (av) av.textContent = 'v' + APP_VER; }
 // Only the month grid view remains (the old agenda/list view was dropped).
 let viewMode = 'grid';
 
