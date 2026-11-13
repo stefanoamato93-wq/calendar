@@ -70,6 +70,8 @@ Two refinements that make a **future-dated** carnet behave correctly:
 - the manager has a **🛒 Plan from flagged days** box: one row per carnet in the chain (last recorded, then Buy #1, #2 …) with tickets covered and how it ends (all used by …, N unused at expiry, or N left after the plan);
 - each planned buy day shows **🛒** in its calendar cell.
 
+**Carnet bar on the calendar (v1.11).** Every day a carnet covers gets a soft yellow bar along the bottom of its grid cell (`.cband`). `carnetSpans()` builds one span per carnet: from its purchase day to the **earlier** of its last valid day (date + 29) or the day its last ticket is used. Planned carnets come from `carnetForecast()`, so the next bar starts on the day a new carnet is needed (the 🛒 day). Older recorded carnets stop the day before the next one starts. Bars are rounded on a carnet's first and last day; if one carnet ends and the next starts on the same day, the cell shows both halves. Days with no live carnet have no bar.
+
 Planned carnets use the size of the last recorded one. They are only a forecast: record the real purchase under **New carnet bought** as usual.
 
 Everything (toggles, leg company, carnet records) is stored in the database and synced across devices.

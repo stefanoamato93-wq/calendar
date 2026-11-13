@@ -371,6 +371,16 @@ body {
 .gcell { position: relative; }
 .gcell .marta-dot { top: 3px; right: 3px; width: 8px; height: 8px; box-shadow: 0 0 0 1.5px var(--card); }
 
+/* Carnet validity: soft yellow bar along the bottom of every day a carnet covers */
+.grid-weeks .gcell { padding-bottom: 8px; }
+.gcell .cband { position: absolute; left: 0; right: 0; bottom: 2px; height: 4px; background: rgba(255, 204, 0, 0.55); pointer-events: none; }
+.gcell .cband.s { left: 4px; border-radius: 2px 0 0 2px; }
+.gcell .cband.e { right: 4px; border-radius: 0 2px 2px 0; }
+.gcell .cband.s.e { border-radius: 2px; }
+/* one carnet ends and the next starts on the same day: split the cell */
+.gcell .cband.hl { right: 52%; }
+.gcell .cband.hr { left: 52%; }
+
 /* "(Milano)" tag under the date number */
 .dmilano { font-size: 9.5px; font-weight: 700; color: #8a5300; line-height: 1.05; margin-top: 1px; }
 
@@ -736,7 +746,7 @@ body {
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 11;          // saved-data format, NOT the app version
 // App version shown next to the title (also in <title> and #appVer). +0.01 on every live update.
-const APP_VER = '1.10';
+const APP_VER = '1.11';
 // Keep the title and the header label in step with APP_VER, so one bump is enough.
 document.title = 'Travel Calendar v' + APP_VER;
 { const av = document.getElementById('appVer'); if (av) av.textContent = 'v' + APP_VER; }
@@ -1404,6 +1414,7 @@ function renderGrid(daysInMonth, tk) {
   for (let i = 0; i < lead; i++) html += '<div class="gcell out"></div>';
   // days on which the forecast says to buy a new carnet (🛒 in the cell)
   const buyDays = new Set(carnetForecast().books.filter(b => b.planned).map(b => b.date));
+  const cSpans = carnetSpans();
 
   for (let d = 1; d <= daysInMonth; d++) {
     const key = ymd(viewYear, viewMonth, d);
@@ -1428,6 +1439,15 @@ function renderGrid(daysInMonth, tk) {
     const flags = (buyDays.has(key) ? '<span class="gbuy" title="Buy a new carnet">🛒</span>' : '') +
                   (carnetN ? '🎫'.repeat(carnetN) : (dy.milano ? 'MI' : ''));
     const martaDot = dy.marta ? `<span class="marta-dot" title="Marta"></span>` : '';
+    // yellow carnet bar: rounded at a carnet's first and last day, split if two meet
+    const onSpans = cSpans.filter(s => key >= s.start && key <= s.end);
+    const cband = onSpans.map((s, i) => {
+      const bc = ['cband'];
+      if (key === s.start) bc.push('s');
+      if (key === s.end) bc.push('e');
+      if (onSpans.length > 1) bc.push(i === 0 ? 'hl' : 'hr');
+      return `<span class="${bc.join(' ')}"></span>`;
+    }).join('');
 
     const dc = dayColor(dy);
     let style = dc ? `background:${dc.bg};color:${dc.fg};` : '';
@@ -1452,6 +1472,7 @@ function renderGrid(daysInMonth, tk) {
       ${flags ? `<span class="gflags">${flags}</span>` : ''}
       ${dots ? `<span class="gdots">${dots}</span>` : ''}
       ${martaDot}
+      ${cband}
     </div>`;
   }
   // trailing blanks to complete the final week row
@@ -2232,6 +2253,22 @@ function carnetForecast() {
     cur.left--; cur.covered++; cur.lastUse = k;
   });
   return { books, nextBuy: books.find(b => b.planned) || null, today };
+}
+// Days each carnet is "live" on the grid (yellow bar): from its purchase day to the
+// earlier of its last valid day (date + 29) or the day its last ticket is used.
+// Planned carnets come from the forecast, so the next bar starts on the day a new
+// carnet is needed. Older recorded carnets stop the day before the next one.
+function carnetSpans() {
+  const cs = sortedCarnets();
+  const spans = [];
+  cs.slice(0, -1).forEach((c, i) => {
+    spans.push({ start: c.date, end: minKey(carnetLastDay(c.date), addDaysKey(cs[i + 1].date, -1)) });
+  });
+  carnetForecast().books.forEach(b => {
+    const end = (b.left <= 0 && b.lastUse) ? minKey(b.lastUse, b.lastDay) : b.lastDay;
+    spans.push({ start: b.date, end });
+  });
+  return spans.sort((a, b) => a.start < b.start ? -1 : a.start > b.start ? 1 : 0);
 }
 function currentCarnet() { const s = carnetStats(); return s.find(c => c.isCurrent) || null; }
 function upcomingCarnet() { const s = carnetStats(); return s.find(c => c.future && !c.isCurrent) || null; }
