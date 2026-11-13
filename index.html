@@ -373,9 +373,10 @@ body {
 
 /* Carnet validity: soft yellow bar along the bottom of every day a carnet covers */
 /* Carnet brackets: a curved "(" on the first valid day, ")" on the last one */
-.gcell .cpar { position: absolute; top: 10%; bottom: 10%; width: 8px; pointer-events: none; z-index: 1; }
-.gcell .cpar.o { left: 1px; border-left: 3px solid #e0a800; border-radius: 50% 0 0 50%; }
-.gcell .cpar.c { right: 1px; border-right: 3px solid #e0a800; border-radius: 0 50% 50% 0; }
+/* full-height edge strip; the cell's rounded corners + overflow:hidden curve its ends */
+.gcell .cpar { position: absolute; top: 0; bottom: 0; width: 3px; background: #e0a800; pointer-events: none; z-index: 1; }
+.gcell .cpar.o { left: 0; }
+.gcell .cpar.c { right: 0; }
 
 /* "(Milano)" tag under the date number */
 .dmilano { font-size: 9.5px; font-weight: 700; color: #8a5300; line-height: 1.05; margin-top: 1px; }
@@ -742,7 +743,7 @@ body {
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 11;          // saved-data format, NOT the app version
 // App version shown next to the title (also in <title> and #appVer). +0.01 on every live update.
-const APP_VER = '1.13';
+const APP_VER = '1.14';
 // Keep the title and the header label in step with APP_VER, so one bump is enough.
 document.title = 'Travel Calendar v' + APP_VER;
 { const av = document.getElementById('appVer'); if (av) av.textContent = 'v' + APP_VER; }
