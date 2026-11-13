@@ -374,7 +374,7 @@ body {
 /* Carnet validity: soft yellow bar along the bottom of every day a carnet covers */
 /* Carnet brackets: a curved "(" on the first valid day, ")" on the last one */
 /* full-height edge strip; the cell's rounded corners + overflow:hidden curve its ends */
-.gcell .cpar { position: absolute; top: 0; bottom: 0; width: 3px; background: #e0a800; pointer-events: none; z-index: 1; }
+.gcell .cpar { position: absolute; top: 0; bottom: 0; width: 3px; background: #000; pointer-events: none; z-index: 1; }
 .gcell .cpar.o { left: 0; }
 .gcell .cpar.c { right: 0; }
 
@@ -743,7 +743,7 @@ body {
 const STORAGE_KEY = 'travelCalendarData';
 const VERSION = 11;          // saved-data format, NOT the app version
 // App version shown next to the title (also in <title> and #appVer). +0.01 on every live update.
-const APP_VER = '1.14';
+const APP_VER = '1.15';
 // Keep the title and the header label in step with APP_VER, so one bump is enough.
 document.title = 'Travel Calendar v' + APP_VER;
 { const av = document.getElementById('appVer'); if (av) av.textContent = 'v' + APP_VER; }
